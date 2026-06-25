@@ -1,0 +1,36 @@
+# Render Blueprint（GitHub連携で自動デプロイ）
+# 使い方: Render → New → Blueprint → このリポジトリを選択
+# 環境変数(sync:false)は Render のダッシュボードで値を入力する（.envはコミットしない）
+services:
+  - type: web
+    name: clinic-sales-dashboard
+    runtime: node
+    plan: free
+    region: singapore        # 日本に近いリージョン
+    buildCommand: npm install
+    startCommand: node server.js
+    envVars:
+      # --- Supabase（共有データ）---
+      - key: SUPABASE_URL
+        sync: false
+      - key: SUPABASE_SERVICE_KEY
+        sync: false
+      # --- medical-force 認証（院ごと）---
+      - key: CLINIC1_CLIENT_ID
+        sync: false
+      - key: CLINIC1_CLIENT_SECRET
+        sync: false
+      - key: CLINIC1_CLINIC_ID
+        sync: false
+      - key: CLINIC2_CLIENT_ID
+        sync: false
+      - key: CLINIC2_CLIENT_SECRET
+        sync: false
+      - key: CLINIC2_CLINIC_ID
+        sync: false
+      - key: CLINIC3_CLIENT_ID
+        sync: false
+      - key: CLINIC3_CLIENT_SECRET
+        sync: false
+      - key: CLINIC3_CLINIC_ID
+        sync: false

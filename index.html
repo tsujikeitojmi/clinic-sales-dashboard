@@ -1,0 +1,715 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <base target="_top">
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>3院売上集計ダッシュボード</title>
+  <!-- ファビコンは使わない（"data:," で「アイコン無し」を明示。外部から何も取得しない） -->
+  <link rel="icon" href="data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCA2NCA2NCI+CjxkZWZzPjxsaW5lYXJHcmFkaWVudCBpZD0iZyIgeDE9IjAiIHkxPSIwIiB4Mj0iMSIgeTI9IjEiPgo8c3RvcCBvZmZzZXQ9IjAiIHN0b3AtY29sb3I9IiNjNDgxOGMiLz48c3RvcCBvZmZzZXQ9IjEiIHN0b3AtY29sb3I9IiNhODU5NmEiLz48L2xpbmVhckdyYWRpZW50PjwvZGVmcz4KPHJlY3Qgd2lkdGg9IjY0IiBoZWlnaHQ9IjY0IiByeD0iMTYiIGZpbGw9InVybCgjZykiLz4KPHBhdGggZmlsbC1ydWxlPSJldmVub2RkIiBmaWxsPSIjZmZmZmZmIiBkPSJNMjAgMTUgSDMzIGExNyAxNyAwIDAgMSAwIDM0IEgyMCBaIE0yNy41IDIyLjUgSDMyLjUgYTEwIDEwIDAgMCAxIDAgMjAgSDI3LjUgWiIvPgo8Y2lyY2xlIGN4PSI0MC41IiBjeT0iMjAiIHI9IjIuNCIgZmlsbD0iI2U3YzA3MSIvPgo8L3N2Zz4=">
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+  <style>
+    :root{
+      --bg:#f7f5f4; --panel:#ffffff; --panel2:#f4f1ef; --line:#ece7e3;
+      --txt:#3c3742; --sub:#a8a09a; --hair:#f0ece8;
+      --accent:#b76e79; --accent-d:#a05a66; --accent-soft:#f7eb ed; --accent-tint:#f8edef;
+      --accent2:#7fa99b; --accent2-tint:#ecf3f0;
+      --gold:#c9a35b; --normal:#8aa9cf; --cp:#e0ab6c; --media:#cf8fa9;
+      --sh-sm:0 1px 2px rgba(60,45,45,.05), 0 1px 3px rgba(60,45,45,.04);
+      --sh:0 2px 6px rgba(60,45,45,.05), 0 6px 18px rgba(60,45,45,.05);
+    }
+    *{box-sizing:border-box}
+    body{margin:0;font-family:"Hiragino Kaku Gothic ProN","Noto Sans JP","Segoe UI",Meiryo,sans-serif;
+      background:var(--bg);color:var(--txt);font-size:14px;-webkit-font-smoothing:antialiased;letter-spacing:.01em}
+    .app{display:flex;min-height:100vh}
+
+    /* サイドバー（画面高さに固定。中のアコーディオンだけスクロール、振り分けボタンは常に最下部に固定） */
+    .side{width:256px;flex:0 0 256px;background:var(--panel);border-right:1px solid var(--line);
+      padding:20px 16px;display:flex;flex-direction:column;gap:16px;
+      position:sticky;top:0;height:100vh;overflow:hidden}
+    .brand{font-weight:700;font-size:15px;letter-spacing:.02em;color:var(--accent-d)}
+    .brand small{display:block;color:var(--sub);font-weight:500;font-size:11px;margin-top:4px}
+    .side h4{margin:6px 0 4px;color:var(--sub);font-size:11px;text-transform:uppercase;letter-spacing:.08em}
+
+    /* 院アコーディオン */
+    .accordion{flex:1;overflow:auto;display:flex;flex-direction:column;gap:4px;min-height:0}
+    .acc-clinic{border-radius:12px;overflow:hidden}
+    .acc-head{cursor:pointer;padding:11px 12px;border-radius:12px;display:flex;align-items:center;gap:10px;
+      border:1px solid transparent;transition:background .12s}
+    .acc-head:hover{background:var(--panel2)}
+    .acc-head.sel{background:var(--accent-tint);border-color:#efd9dd}
+    .acc-head .dot{width:9px;height:9px;border-radius:50%;flex:0 0 9px}
+    .acc-head .nm{font-weight:600}
+    .acc-head.sel .nm{color:var(--accent-d)}
+    .acc-head .cnt{color:var(--sub);font-size:11px;background:var(--bg);border:1px solid var(--line);
+      border-radius:20px;padding:0 8px;line-height:18px}
+    .acc-head .arw{margin-left:auto;color:var(--sub);font-size:10px;transition:transform .15s}
+    .acc-clinic.open .acc-head .arw{transform:rotate(90deg)}
+    .acc-body{display:none;flex-direction:column;gap:1px;padding:4px 0 8px 8px}
+    .acc-clinic.open .acc-body{display:flex}
+    .acc-body .row{cursor:pointer;padding:7px 10px;border-radius:8px;display:flex;justify-content:space-between;gap:8px;font-size:13px}
+    .acc-body .row:hover{background:var(--panel2)}
+    .acc-body .row.on{background:var(--accent-tint);color:var(--accent-d);font-weight:600}
+    .acc-body .row .nm{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+    .acc-body .row .vl{color:var(--sub);font-variant-numeric:tabular-nums;flex:0 0 auto}
+    .acc-body .row.on .vl{color:var(--accent)}
+    .acc-body .row.unc .nm{color:var(--accent)}
+    .acc-body .row.zero{opacity:.4}
+    .acc-body .hint{color:var(--sub);font-size:11px;padding:6px 9px}
+
+    .pending-btn{all:unset;flex:0 0 auto;cursor:pointer;text-align:center;padding:12px;border-radius:12px;
+      background:var(--accent);color:#fff;font-weight:600;box-shadow:var(--sh-sm);transition:filter .12s}
+    .pending-btn:hover{filter:brightness(1.04)}
+    .pending-btn b{color:#fff;text-decoration:underline;text-underline-offset:2px}
+
+    /* メイン */
+    .main{flex:1;padding:22px 26px;overflow:auto}
+    .topbar{display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:18px}
+    .topbar h2{margin:0;font-size:19px;font-weight:700}
+    .topbar .sp{flex:1}
+    select,.ghost{background:var(--panel);color:var(--txt);border:1px solid var(--line);
+      border-radius:10px;padding:8px 12px;font-size:13px;box-shadow:var(--sh-sm)}
+    .ghost{cursor:pointer;transition:background .12s,border-color .12s}
+    .ghost:hover{background:var(--accent-tint);border-color:#efd9dd;color:var(--accent-d)}
+
+    .cards{display:grid;grid-template-columns:repeat(4,1fr);gap:16px;margin-bottom:18px}
+    .card{background:var(--panel);border:1px solid var(--line);border-radius:18px;padding:18px 18px;box-shadow:var(--sh)}
+    .card .k{color:var(--sub);font-size:12px;margin-bottom:9px;font-weight:600}
+    .card .v{font-size:25px;font-weight:700;font-variant-numeric:tabular-nums;letter-spacing:.01em}
+    .card .s{color:var(--sub);font-size:11px;margin-top:7px}
+    .card.accent{background:linear-gradient(135deg,#fff, var(--accent-tint));border-color:#efd9dd}
+    .card.accent .v{color:var(--accent-d)}
+
+    .grid2{display:grid;grid-template-columns:1.6fr 1fr;gap:16px}
+    .panel{background:var(--panel);border:1px solid var(--line);border-radius:18px;padding:18px 20px;margin-bottom:16px;box-shadow:var(--sh)}
+    .panel h3{margin:0 0 14px;font-size:14px;font-weight:700}
+    .chart-wrap{position:relative;height:300px}
+
+    .rank{display:flex;flex-direction:column;gap:9px}
+    .rank .it{display:flex;align-items:center;gap:10px}
+    .rank .it .no{width:20px;color:var(--sub);text-align:right;font-variant-numeric:tabular-nums;font-weight:600}
+    .rank .it .nm{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+    .rank .it .bar{height:8px;border-radius:6px;background:var(--accent);min-width:3px}
+    .rank .it .vl{width:96px;text-align:right;color:var(--sub);font-variant-numeric:tabular-nums}
+    .tabsmini{display:flex;gap:6px;margin-bottom:12px}
+    .tabsmini button{all:unset;cursor:pointer;font-size:12px;color:var(--sub);padding:5px 11px;border-radius:20px}
+    .tabsmini button.on{background:var(--accent-tint);color:var(--accent-d);font-weight:600}
+
+    table{width:100%;border-collapse:collapse}
+    th,td{text-align:right;padding:9px 10px;border-bottom:1px solid var(--hair);font-variant-numeric:tabular-nums;white-space:nowrap}
+    th:first-child,td:first-child{text-align:left;white-space:normal}   /* 施術名だけ折り返しOK */
+    th{color:var(--sub);font-weight:600;font-size:12px}
+    tbody tr:hover{background:var(--panel2)}
+    tr.unc td:first-child{color:var(--accent)}
+
+    /* モーダル */
+    .modal{position:fixed;inset:0;background:rgba(70,55,55,.30);backdrop-filter:blur(2px);
+      display:none;align-items:center;justify-content:center;z-index:50}
+    .modal.on{display:flex}
+    .modal .box{background:var(--panel);border:1px solid var(--line);border-radius:20px;box-shadow:0 20px 60px rgba(60,45,45,.22);
+      width:min(960px,94vw);max-height:88vh;display:flex;flex-direction:column}
+    .modal .hd{padding:16px 20px;border-bottom:1px solid var(--hair);display:flex;align-items:center;gap:10px}
+    .modal .hd h3{margin:0;flex:1;font-size:16px;font-weight:700}
+    .modal .bd{padding:10px 20px;overflow:auto}
+    .modal .ft{padding:14px 20px;border-top:1px solid var(--hair);display:flex;justify-content:flex-end;gap:10px;align-items:center}
+    .modal input,.modal select{background:var(--panel);color:var(--txt);border:1px solid var(--line);
+      border-radius:8px;padding:6px 9px;font-size:12px}
+    .modal td{text-align:left;vertical-align:middle}
+    .primary{background:var(--accent);border:none;color:#fff;border-radius:10px;padding:10px 18px;cursor:pointer;font-weight:700;box-shadow:var(--sh-sm)}
+    .primary:hover{filter:brightness(1.05)}
+    .x{all:unset;cursor:pointer;color:var(--sub);font-size:20px;line-height:1}
+    .x:hover{color:var(--accent)}
+
+    /* カード式 振り分け */
+    .card-box{width:min(560px,94vw)}
+    .modal .sub{padding:0 20px 8px;font-size:12px}
+    .scope-toggle{display:inline-flex;gap:4px;background:var(--panel2);border:1px solid var(--line);border-radius:20px;padding:2px}
+    .scope-toggle button{all:unset;cursor:pointer;font-size:11px;padding:3px 11px;border-radius:20px;color:var(--sub)}
+    .scope-toggle button.on{background:var(--accent);color:#fff;font-weight:600}
+    .item-card{background:linear-gradient(135deg, var(--accent-tint), #fff);border:1px solid #efd9dd;border-radius:14px;padding:18px 18px 16px;margin:8px 0 16px}
+    .item-card .nm{font-size:15px;font-weight:700;line-height:1.55;word-break:break-word}
+    .item-card .meta{display:flex;align-items:center;gap:10px;margin-top:12px;flex-wrap:wrap}
+    .item-card .amt{color:var(--sub);font-size:12px;font-variant-numeric:tabular-nums}
+    .type-chips{display:flex;gap:6px;margin-left:auto}
+    .type-chips button{all:unset;cursor:pointer;font-size:11px;padding:4px 12px;border-radius:20px;border:1px solid var(--line);color:var(--sub);background:#fff}
+    .type-chips button.on{background:var(--accent);border-color:var(--accent);color:#fff;font-weight:600}
+    .q{font-size:12px;margin:2px 0 9px;font-weight:600}
+    .group-list{display:flex;flex-direction:column;gap:8px;max-height:46vh;overflow:auto;padding-right:4px}
+    .group-list button{all:unset;cursor:pointer;padding:13px 15px;border-radius:12px;border:1px solid var(--line);
+      background:var(--panel);font-size:14px;display:flex;align-items:center;gap:8px;transition:border-color .12s,background .12s}
+    .group-list button:hover{background:var(--accent-tint);border-color:#efd9dd}
+    .group-list button .gname{flex:1}
+    .group-list button .sg{font-size:10px;background:var(--accent);color:#fff;border-radius:20px;padding:2px 10px;font-weight:700}
+    .group-list button.reco{border-color:var(--accent);background:var(--accent-tint)}
+    .group-list button.cur{border-color:var(--accent2);background:var(--accent2-tint)}
+    .group-list button.cur .sg{background:var(--accent2)}
+    .group-list .exg{color:var(--sub);margin-top:4px}
+    .group-list .done{justify-content:center;color:var(--accent2);font-weight:700}
+
+    .muted{color:var(--sub)}
+    .badge{font-size:11px;padding:3px 9px;border-radius:20px;border:1px solid var(--line);color:var(--sub)}
+    .iedit{all:unset;cursor:pointer;font-size:12px;color:var(--accent);border:1px solid var(--line);
+      border-radius:8px;padding:3px 11px;background:#fff;white-space:nowrap}
+    .iedit:hover{background:var(--accent-tint);border-color:#efd9dd}
+    .pill{display:inline-block;font-size:11px;padding:2px 9px;border-radius:20px;background:var(--panel2);color:var(--sub)}
+    .auto-note{background:var(--accent2-tint);border:1px solid #d8e7e1;color:#4f7d70;
+      border-radius:10px;padding:9px 12px;font-size:12px;margin:2px 0 12px}
+    .loading{position:fixed;inset:0;display:none;align-items:center;justify-content:center;
+      background:rgba(247,245,244,.72);backdrop-filter:blur(1px);z-index:60;font-size:14px;color:var(--txt)}
+    .loading.on{display:flex}
+    .spin{width:34px;height:34px;border:3px solid var(--accent-tint);border-top-color:var(--accent);
+      border-radius:50%;animation:sp 1s linear infinite;margin-right:12px}
+    @keyframes sp{to{transform:rotate(360deg)}}
+  </style>
+</head>
+<body>
+<div class="app">
+  <!-- ===== サイドバー（院アコーディオン） ===== -->
+  <aside class="side">
+    <div class="brand">3院 売上ダッシュボード<small>medical-force / 施術カテゴリ集計</small></div>
+    <div class="accordion" id="accordion"></div>
+    <button class="pending-btn" id="pendingBtn" onclick="openPending()">
+      未分類を振り分け <b id="pendingCount">–</b>
+    </button>
+  </aside>
+
+  <!-- ===== メイン ===== -->
+  <main class="main">
+    <div class="topbar">
+      <h2 id="title">読み込み中…</h2>
+      <span class="badge" id="catBadge" style="display:none"></span>
+      <span class="muted" id="freshness" style="font-size:11px"></span>
+      <div class="sp"></div>
+      <select id="yearSel" onchange="reload()"></select>
+      <select id="monthSel" onchange="reload()"></select>
+      <button class="ghost" onclick="reload(true)" title="選択中の月だけAPIから取り直す">🔄 最新取得</button>
+      <button class="ghost" onclick="fetchAllPast()" title="この院の過去12か月のうち未取得の月をまとめて取得">📥 過去分を取得</button>
+    </div>
+
+    <div class="cards" id="cards"></div>
+
+    <!-- 月別グラフは全幅（過去12か月） -->
+    <div class="panel">
+      <h3>月別売上推移（棒）＋ 件数（折れ線）<span class="muted" style="font-weight:400;font-size:12px">　選択月から過去12か月</span></h3>
+      <div class="chart-wrap"><canvas id="chart"></canvas></div>
+      <div class="muted" style="font-size:11px;margin-top:8px">
+        ※ 過去月はキャッシュ(data/cache)にある月のみ表示。各月を一度ダッシュボード表示すると蓄積されます。
+      </div>
+    </div>
+
+    <div class="grid2">
+      <div class="panel">
+        <h3>カテゴリ別 明細（種別内訳）</h3>
+        <table id="catTable">
+          <thead>
+            <tr><th>カテゴリ</th><th>売上</th><th>件数</th><th>通常</th><th>CP</th><th>媒体</th></tr>
+          </thead>
+          <tbody></tbody>
+        </table>
+      </div>
+      <div class="panel">
+        <h3>ランキング</h3>
+        <div class="tabsmini" id="rankTabs">
+          <button data-k="sales" class="on" onclick="switchRank('sales')">粗利(売上) TOP</button>
+          <button data-k="count" onclick="switchRank('count')">件数 TOP</button>
+        </div>
+        <div class="rank" id="rank"></div>
+      </div>
+    </div>
+
+    <div class="panel">
+      <h3 id="itemsTitle">施術内訳（マスタ振り分け）</h3>
+      <div class="muted" id="itemsHint" style="font-size:11px;margin-bottom:8px"></div>
+      <table id="itemsTable">
+        <thead>
+          <tr><th>施術名（マスタ）</th><th>APIカテゴリ（元フォルダ）</th><th>カテゴリ</th><th>種別</th><th>件数</th><th>売上</th><th>平均単価</th><th></th></tr>
+        </thead>
+        <tbody></tbody>
+      </table>
+    </div>
+  </main>
+</div>
+
+<!-- ===== 未分類 振り分け（カード式） ===== -->
+<div class="modal" id="pendingModal">
+  <div class="box card-box">
+    <div class="hd">
+      <h3>グループを確認</h3>
+      <span class="muted" id="pendingProgress"></span>
+      <button class="x" onclick="closePending()">✕</button>
+    </div>
+    <div class="sub muted" id="pendingSub"></div>
+    <div class="bd" id="pendingBody">
+      <div class="item-card" id="itemCard"></div>
+      <div class="q muted">どのグループ？</div>
+      <div class="group-list" id="groupList"></div>
+    </div>
+    <div class="ft">
+      <span class="muted" id="pendingMsg" style="margin-right:auto"></span>
+      <button class="ghost" onclick="skipItem()">スキップ</button>
+      <button class="ghost" onclick="closePending()">一時停止して閉じる</button>
+    </div>
+  </div>
+</div>
+
+<!-- ===== 施術ごとの振り分け編集 ===== -->
+<div class="modal" id="editModal">
+  <div class="box card-box">
+    <div class="hd">
+      <h3>施術の振り分けを編集</h3>
+      <button class="x" onclick="closeEdit()">✕</button>
+    </div>
+    <div class="bd">
+      <div class="item-card" id="editCard"></div>
+      <div class="q muted">どのグループに変える？</div>
+      <div class="group-list" id="editList"></div>
+    </div>
+    <div class="ft">
+      <span class="muted" id="editMsg" style="margin-right:auto"></span>
+      <button class="ghost" onclick="closeEdit()">キャンセル</button>
+    </div>
+  </div>
+</div>
+
+<div class="loading" id="loading"><div class="spin"></div><span id="loadingMsg">集計中…</span></div>
+
+<script>
+/* ====== 状態 ====== */
+let CFG = null;
+let DATA = null;
+let OVERVIEW = null;      // 全院のサイドバー用（キャッシュ済みの院だけ値あり）
+let curClinic = null;
+let curCat = null;        // 選択中カテゴリ（null=全体）
+let rankKey = 'sales';
+let chart = null;
+let PENDING = null;
+
+const yen = n => '¥' + (Number(n)||0).toLocaleString('ja-JP');
+const num = n => (Number(n)||0).toLocaleString('ja-JP');
+
+/* ====== サーバAPI（Node.js / fetch） ====== */
+async function api(pathname, params){
+  const qs = params ? '?' + new URLSearchParams(params).toString() : '';
+  const res = await fetch(pathname + qs);
+  const j = await res.json();
+  if (!res.ok) throw new Error(j.error || ('HTTP ' + res.status));
+  return j;
+}
+async function apiPost(pathname, body){
+  const res = await fetch(pathname, {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(body)});
+  const j = await res.json();
+  if (!res.ok) throw new Error(j.error || ('HTTP ' + res.status));
+  return j;
+}
+
+/* ====== 初期化 ====== */
+window.addEventListener('load', async () => {
+  showLoad('設定読込…');
+  try {
+    CFG = await api('/api/config');
+    curClinic = CFG.clinics[0].key;
+    buildPeriodSelectors();
+    reload();
+  } catch(e){ onErr(e); }
+});
+
+function setClinic(key){
+  if (key === curClinic) return;   // すでに開いている院は何もしない
+  curClinic = key; curCat = null;
+  reload();
+}
+
+function buildPeriodSelectors(){
+  const ys = document.getElementById('yearSel'), ms = document.getElementById('monthSel');
+  ys.innerHTML=''; ms.innerHTML='';
+  for (let y=CFG.year; y>=CFG.year-2; y--){
+    const o=document.createElement('option'); o.value=y; o.textContent=y+'年';
+    if (y===CFG.year) o.selected=true; ys.appendChild(o);
+  }
+  for (let m=1;m<=12;m++){
+    const o=document.createElement('option'); o.value=m; o.textContent=m+'月';
+    if (m===CFG.month) o.selected=true; ms.appendChild(o);
+  }
+}
+
+/* ====== ダッシュボード読込 ====== */
+async function reload(refresh){
+  const y = +document.getElementById('yearSel').value;
+  const m = +document.getElementById('monthSel').value;
+  showLoad(refresh
+    ? `最新取得中…（APIから再取得・1日ずつのため15〜20秒）`
+    : `読込中…（初回のみ取得・2回目以降はキャッシュで一瞬）`);
+  try {
+    const params = {clinic:curClinic, year:y, month:m};
+    if (refresh) params.refresh = 1;
+    DATA = await api('/api/dashboard', params);
+    OVERVIEW = await api('/api/overview', {year:y, month:m});
+    render(); hideLoad();
+  } catch(e){ onErr(e); }
+}
+
+function render(){
+  document.getElementById('title').textContent =
+    `${DATA.clinic}　${DATA.year}年${DATA.month}月`;
+  document.getElementById('pendingCount').textContent = num(DATA.pendingCount);
+  updateFreshness();
+  renderCards();
+  buildAccordion();
+  renderChart();
+  renderRank();
+  renderCatTable();
+  renderItems();
+  updateCatBadge();
+}
+
+/* この院の過去12か月をまとめて取得（キャッシュ済みは即スキップ・未取得だけAPI） */
+async function fetchAllPast(){
+  if (!DATA || !DATA.monthly) return;
+  const months = DATA.monthly.map(x=>x.label);                 // "YYYY/MM" ×12
+  const missing = DATA.monthly.filter(x=>!x.hasData).length;
+  const ok = confirm(
+    `${DATA.clinic} の過去12か月を取得します。\n`+
+    `未取得 ${missing} か月ぶんをAPIから取得（1か月あたり15〜20秒）。\n`+
+    `${missing>=6?'数分かかります。':''}続けますか？`);
+  if (!ok) return;
+  let done = 0;
+  for (const lbl of months){
+    const [y,m] = lbl.split('/').map(Number);
+    done++;
+    showLoad(`過去分を取得中… ${done}/${months.length}（${lbl}）${'　'}※キャッシュ済みはすぐ進みます`);
+    try { await api('/api/dashboard', {clinic:curClinic, year:y, month:m}); } catch(e){ /* 月単位の失敗はスキップ */ }
+  }
+  hideLoad();
+  reload();   // グラフを更新
+}
+
+function updateFreshness(){
+  const el = document.getElementById('freshness');
+  if (!DATA || !DATA.fetchedAt){ el.textContent=''; return; }
+  const t = new Date(DATA.fetchedAt);
+  const z = n=>('0'+n).slice(-2);
+  el.textContent = `${DATA.cached?'📦 キャッシュ':'🔄 最新'}・${t.getMonth()+1}/${t.getDate()} ${z(t.getHours())}:${z(t.getMinutes())}取得`;
+}
+
+/* ====== カード ====== */
+function renderCards(){
+  const s = DATA.summary;
+  const cards = [
+    {k:'累計粗利（売上）', v:yen(s.totalSales), s:'消化除外・契約日計上'},
+    {k:'累計施術数',       v:num(s.totalCount)+' 件', s:'同会計×同カテゴリ=1件'},
+    {k:'平均単価',         v:yen(s.avgPrice), s:'売上 ÷ 件数'},
+    {k:'CP・媒体 売上',    v:yen(s.cpSales+s.mediaSales),
+       s:`CP ${yen(s.cpSales)} / 媒体 ${yen(s.mediaSales)}`, accent:true},
+  ];
+  document.getElementById('cards').innerHTML = cards.map(c=>`
+    <div class="card ${c.accent?'accent':''}">
+      <div class="k">${c.k}</div><div class="v">${c.v}</div><div class="s">${c.s}</div>
+    </div>`).join('');
+}
+
+/* ====== サイドバー：院アコーディオン ====== */
+function buildAccordion(){
+  const canon = CFG.categories || [];
+  const html = CFG.clinics.map(c=>{
+    const active = c.key===curClinic;
+    let badge='', body='';
+
+    if (active && DATA){
+      // 選択中の院：DATAのカテゴリ＋カテゴリ一覧(canonical)をマージ（0円も表示）
+      const map={}; DATA.categories.forEach(x=>map[x.category]=x);
+      const names=[];
+      DATA.categories.forEach(x=>{ if(x.category!=='★未分類') names.push(x.category); });
+      canon.forEach(cat=>{ if(!map[cat]) names.push(cat); });
+      let cats = Array.from(new Set(names)).map(cat=> map[cat] || {category:cat,sales:0,count:0});
+      cats.sort((a,b)=> b.sales - a.sales);
+      if (map['★未分類']) cats.push(map['★未分類']);
+      badge = `<span class="cnt">${cats.filter(x=>x.sales>0 && x.category!=='★未分類').length}</span>`;
+
+      const rows = [`<div class="row ${curCat===null?'on':''}" onclick="selectCat(null)">
+          <span class="nm">▣ 全体</span><span class="vl">${yen(DATA.summary.totalSales)}</span></div>`];
+      cats.forEach(x=>{
+        const unc = x.category==='★未分類';
+        rows.push(`<div class="row ${unc?'unc':''} ${x.sales===0?'zero':''} ${curCat===x.category?'on':''}"
+            data-cat="${esc(x.category)}" onclick="selectCat(this.dataset.cat)">
+            <span class="nm">${esc(x.category)}</span><span class="vl">${yen(x.sales)}</span></div>`);
+      });
+      body = rows.join('');
+    } else {
+      const ov = (OVERVIEW||[]).find(o=>o.key===c.key);
+      if (ov && ov.cached){
+        badge = `<span class="cnt">${ov.categories.filter(x=>x.sales>0 && x.category!=='★未分類').length}</span>`;
+      }
+      body = `<div class="hint">クリックで表示</div>`;
+    }
+
+    return `<div class="acc-clinic ${active?'open':''}">
+      <div class="acc-head ${active?'sel':''}" onclick="setClinic('${c.key}')">
+        <span class="dot" style="background:${c.color}"></span>
+        <span class="nm">${esc(c.name)}</span>${badge}
+        <span class="arw">▶</span>
+      </div>
+      <div class="acc-body">${body}</div>
+    </div>`;
+  }).join('');
+  document.getElementById('accordion').innerHTML = html;
+}
+
+function selectCat(cat){ curCat = (cat===curCat) ? null : cat; buildAccordion(); renderCards2(); renderItems(); updateCatBadge(); }
+
+function updateCatBadge(){
+  const b = document.getElementById('catBadge');
+  if (curCat){ b.style.display=''; b.textContent='絞り込み: '+curCat; }
+  else b.style.display='none';
+}
+
+/* カテゴリ選択時はカード値をそのカテゴリで上書き */
+function renderCards2(){
+  if (!curCat){ renderCards(); return; }
+  const c = DATA.categories.find(x=>x.category===curCat);
+  if (!c){ renderCards(); return; }
+  const cards = [
+    {k:`${curCat} 売上`, v:yen(c.sales)},
+    {k:`${curCat} 件数`, v:num(c.count)+' 件'},
+    {k:'平均単価', v:yen(c.count?Math.round(c.sales/c.count):0)},
+    {k:'CP・媒体', v:yen(c.CP+c.媒体), s:`CP ${yen(c.CP)} / 媒体 ${yen(c.媒体)}`, accent:true},
+  ];
+  document.getElementById('cards').innerHTML = cards.map(c=>`
+    <div class="card ${c.accent?'accent':''}">
+      <div class="k">${c.k}</div><div class="v">${c.v}</div><div class="s">${c.s||''}</div>
+    </div>`).join('');
+}
+
+/* ====== 月別グラフ ====== */
+function renderChart(){
+  const m = DATA.monthly;
+  const labels = m.map(x=>x.label);
+  const ctx = document.getElementById('chart');
+  if (chart) chart.destroy();
+  chart = new Chart(ctx, {
+    data:{
+      labels,
+      datasets:[
+        {type:'bar', label:'通常', data:m.map(x=>x.通常), backgroundColor:'#8aa9cf', stack:'s', order:3, borderRadius:3},
+        {type:'bar', label:'CP',   data:m.map(x=>x.CP),   backgroundColor:'#e0ab6c', stack:'s', order:3, borderRadius:3},
+        {type:'bar', label:'媒体', data:m.map(x=>x.媒体), backgroundColor:'#cf8fa9', stack:'s', order:3, borderRadius:3},
+        {type:'line',label:'件数', data:m.map(x=>x.count), yAxisID:'y1',
+           borderColor:'#7fa99b', backgroundColor:'#7fa99b', tension:.35, order:1, pointRadius:3},
+      ]
+    },
+    options:{
+      responsive:true, maintainAspectRatio:false,
+      interaction:{mode:'index', intersect:false},
+      plugins:{legend:{labels:{color:'#7a736d', usePointStyle:true, pointStyleWidth:10, boxHeight:7}},
+        tooltip:{callbacks:{label:c=> c.dataset.type==='line'
+          ? `${c.dataset.label}: ${num(c.raw)} 件`
+          : `${c.dataset.label}: ${yen(c.raw)}`}}},
+      scales:{
+        x:{stacked:true, ticks:{color:'#a8a09a'}, grid:{color:'#f0ece8'}},
+        y:{stacked:true, ticks:{color:'#a8a09a', callback:v=>'¥'+(v/10000)+'万'}, grid:{color:'#f0ece8'}},
+        y1:{position:'right', ticks:{color:'#7fa99b'}, grid:{drawOnChartArea:false}}
+      }
+    }
+  });
+}
+
+/* ====== ランキング ====== */
+function switchRank(k){
+  rankKey=k;
+  document.querySelectorAll('#rankTabs button').forEach(b=>b.classList.toggle('on', b.dataset.k===k));
+  renderRank();
+}
+function renderRank(){
+  const list = DATA.rankings[rankKey] || [];
+  const max = list.reduce((m,x)=>Math.max(m,x.value),0) || 1;
+  const fmt = rankKey==='sales' ? yen : (v=>num(v)+' 件');
+  document.getElementById('rank').innerHTML = list.map((x,i)=>`
+    <div class="it">
+      <span class="no">${i+1}</span>
+      <span class="nm">${esc(x.label)}</span>
+      <span class="bar" style="width:${Math.max(3,(x.value/max)*120)}px;
+        background:${i===0?'#b76e79':'#d6a7af'}"></span>
+      <span class="vl">${fmt(x.value)}</span>
+    </div>`).join('') || '<div class="muted">データなし</div>';
+}
+
+/* ====== カテゴリ別テーブル ====== */
+function renderCatTable(){
+  const tb = document.querySelector('#catTable tbody');
+  tb.innerHTML = DATA.categories.map(c=>`
+    <tr class="${c.category==='★未分類'?'unc':''}">
+      <td>${esc(c.category)}</td><td>${yen(c.sales)}</td><td>${num(c.count)}</td>
+      <td>${yen(c.通常)}</td><td>${yen(c.CP)}</td><td>${yen(c.媒体)}</td>
+    </tr>`).join('');
+}
+
+/* ====== 施術内訳（マスタ振り分けの中身：optionId単位） ====== */
+function renderItems(){
+  const all = (DATA.items || []);
+  const items = curCat ? all.filter(x=>x.category===curCat) : all;
+  document.getElementById('itemsTitle').textContent = `施術内訳（${curCat || '全カテゴリ'}）`;
+  const totS = items.reduce((s,x)=>s+x.sales,0), totC = items.reduce((s,x)=>s+x.count,0);
+  document.getElementById('itemsHint').textContent =
+    `${items.length}施術 ・ 合計 ${yen(totS)} / ${num(totC)}件` +
+    (curCat ? '' : '　※左サイドで施術カテゴリを選ぶと、その中身だけに絞れます');
+  const tb = document.querySelector('#itemsTable tbody');
+  if (!items.length){ tb.innerHTML = '<tr><td colspan="8" class="muted">該当なし</td></tr>'; return; }
+  tb.innerHTML = items.map(x=>`
+    <tr class="${x.category==='★未分類'?'unc':''}">
+      <td>${esc(x.name)||'<span class="muted">(名称なし)</span>'}</td>
+      <td class="muted" style="text-align:left">${esc(x.apiCat)||'<span style="opacity:.5">—</span>'}</td>
+      <td style="text-align:left"><span class="pill">${esc(x.category)}</span></td>
+      <td class="muted" style="text-align:left">${esc(x.type)}</td>
+      <td>${num(x.count)}</td>
+      <td>${yen(x.sales)}</td>
+      <td>${yen(x.count?Math.round(x.sales/x.count):0)}</td>
+      <td>${x.optionId?`<button class="iedit" data-opt="${esc(x.optionId)}" onclick="editItem(this.dataset.opt)">編集</button>`:''}</td>
+    </tr>`).join('');
+}
+
+/* ====== 未分類 振り分け（カード式：1件ずつ確認） ====== */
+let curIdx = 0;        // 表示中のカード
+let knownCats = [];    // 既存グループ（振り分けで増える）
+let curType = '通常';  // 現カードの種別
+let assignedCount = 0; // このセッションで手動振り分けした数
+let autoAssigned = 0;  // 自動振り分けした数
+let pendingScope = 'all';  // 'all'=キャッシュ済み全月 / 'month'=選択中の月だけ
+
+async function openPending(scope){
+  if (scope) pendingScope = scope;
+  const modal = document.getElementById('pendingModal');
+  modal.classList.add('on');
+  document.getElementById('pendingMsg').textContent='';
+  document.getElementById('itemCard').innerHTML='<div class="muted">かんたんなものを自動振り分け中…</div>';
+  document.getElementById('groupList').innerHTML='';
+  const y=+document.getElementById('yearSel').value, m=+document.getElementById('monthSel').value;
+  // スコープ切替トグル＋説明
+  const toggle = ['all','month'].map(s=>
+    `<button class="${s===pendingScope?'on':''}" onclick="openPending('${s}')">${s==='all'?'全期間（取得済み全月）':'この月だけ'}</button>`).join('');
+  document.getElementById('pendingSub').innerHTML =
+    `<span class="scope-toggle">${toggle}</span>　${DATA?esc(DATA.clinic):''} ・ 金額の大きい順`;
+  try {
+    const body = {clinic:curClinic, year:y, month:m, scope:pendingScope};
+    const auto = await apiPost('/api/auto-assign', body);
+    autoAssigned = auto.assigned || 0;
+    PENDING = await api('/api/pending', body);
+    knownCats = PENDING.knownCategories.slice();
+    curIdx = 0; assignedCount = 0;
+    renderCard();
+  } catch(e){
+    document.getElementById('itemCard').innerHTML = `<div class="muted">取得失敗: ${esc(e.message||e)}</div>`;
+  }
+}
+
+function closePending(){
+  document.getElementById('pendingModal').classList.remove('on');
+  if (assignedCount>0 || autoAssigned>0) reload();   // 自動/手動で振り分けた分があれば再集計
+  autoAssigned = 0;
+}
+
+function renderCard(){
+  const rows = PENDING.rows;
+  const card = document.getElementById('itemCard');
+  const list = document.getElementById('groupList');
+  document.getElementById('pendingProgress').textContent = `${Math.min(curIdx+1, rows.length)} / ${rows.length}件`;
+  const scopeTxt = PENDING.scope==='all' ? `取得済み${PENDING.monthsScanned}か月ぶん` : 'この月';
+  const autoNote = autoAssigned ? `<div class="auto-note">✨ ${scopeTxt}の かんたんなものを ${num(autoAssigned)}件 自動で振り分けました。残りの判断が難しいものだけ確認してください。</div>` : '';
+
+  if (curIdx >= rows.length){
+    card.innerHTML = autoNote + `<div class="nm">完了しました 🎉</div>
+      <div class="amt" style="margin-top:8px">確認が必要な未分類はありません。${assignedCount?`（手動 ${assignedCount}件）`:''}</div>`;
+    list.innerHTML = `<button class="done" onclick="closePending()">閉じて再集計</button>`;
+    return;
+  }
+
+  const r = rows[curIdx];
+  curType = PENDING.types.includes(r.suggestType) ? r.suggestType : '通常';
+  // 施術カード
+  card.innerHTML = autoNote + `
+    <div class="nm">${esc(r.name) || '<span class="muted">(名称なし)</span>'}</div>
+    <div class="meta">
+      <span class="amt">${curType} ${yen(r.sales)} ／ ${PENDING.scope==='all'?'合計':'今月'} ${num(r.count)}件${r.apiCat?` ・ APIカテゴリ:${esc(r.apiCat)}`:''}</span>
+      <span class="type-chips" id="typeChips">
+        ${PENDING.types.map(t=>`<button class="${t===curType?'on':''}" onclick="setType('${t}')">${t}</button>`).join('')}
+      </span>
+    </div>`;
+
+  // グループ候補＝サイドの施術カテゴリ。近い順に並べ替え済み（先頭が「おすすめ」）。
+  curCats = (r.categoriesRanked && r.categoriesRanked.length) ? r.categoriesRanked.slice() : knownCats.slice();
+
+  list.innerHTML =
+    curCats.map((c,i)=>`<button class="${c===r.suggestCategory?'reco':''}" onclick="pickGroup(curCats[${i}])">
+        <span class="gname">${esc(c)}</span>${c===r.suggestCategory?'<span class="sg">おすすめ</span>':''}</button>`).join('')
+    + `<button class="exg" onclick="pickGroup('除外')">✕ 除外（集計に入れない）</button>`;
+}
+let curCats = [];
+
+function setType(t){
+  curType = t;
+  document.querySelectorAll('#typeChips button').forEach(b=>b.classList.toggle('on', b.textContent===t));
+}
+
+async function pickGroup(cat){
+  const r = PENDING.rows[curIdx];
+  document.getElementById('pendingMsg').textContent='保存中…';
+  try {
+    await apiPost('/api/assign', {assignments:[{optionId:r.optionId, name:r.name, apiCat:r.apiCat, category:cat, type:curType}]});
+    assignedCount++;
+    if (cat!=='除外' && !knownCats.includes(cat)) knownCats.push(cat);
+    document.getElementById('pendingMsg').textContent=`「${cat}」に振り分け（計${assignedCount}件）`;
+    curIdx++; renderCard();
+  } catch(e){ onErr(e); }
+}
+
+function skipItem(){ curIdx++; document.getElementById('pendingMsg').textContent='スキップ'; renderCard(); }
+
+/* ====== 施術ごとの振り分け編集 ====== */
+let editIt = null, editType = '通常', editCats = [];
+function editItem(optionId){
+  const it = (DATA.items||[]).find(x=>x.optionId===optionId);
+  if (!it) return;
+  editIt = it;
+  editType = (CFG.types||['通常']).includes(it.type) ? it.type : '通常';
+  document.getElementById('editMsg').textContent='';
+  document.getElementById('editModal').classList.add('on');
+  renderEdit();
+}
+function closeEdit(){ document.getElementById('editModal').classList.remove('on'); }
+
+function renderEdit(){
+  const it = editIt;
+  document.getElementById('editCard').innerHTML = `
+    <div class="nm">${esc(it.name)||'<span class="muted">(名称なし)</span>'}</div>
+    <div class="meta">
+      <span class="amt">現在：<b style="color:var(--accent-d)">${esc(it.category)}</b> ／ ${editType} ・ ${yen(it.sales)} ・ ${num(it.count)}件</span>
+      <span class="type-chips" id="editTypeChips">
+        ${(CFG.types||[]).map(t=>`<button class="${t===editType?'on':''}" onclick="setEditType('${t}')">${t}</button>`).join('')}
+      </span>
+    </div>`;
+  // 候補＝サイドの施術カテゴリ。現在のカテゴリを先頭＆強調。
+  editCats = (CFG.categories||[]).slice();
+  if (it.category && it.category!=='★未分類' && !editCats.includes(it.category)) editCats.unshift(it.category);
+  document.getElementById('editList').innerHTML =
+    editCats.map((c,i)=>`<button class="${c===it.category?'cur':''}" onclick="pickEdit(editCats[${i}])">
+        <span class="gname">${esc(c)}</span>${c===it.category?'<span class="sg">現在</span>':''}</button>`).join('')
+    + `<button class="exg" onclick="pickEdit('除外')">✕ 除外（集計に入れない）</button>`;
+}
+function setEditType(t){
+  editType = t;
+  document.querySelectorAll('#editTypeChips button').forEach(b=>b.classList.toggle('on', b.textContent===t));
+}
+async function pickEdit(cat){
+  document.getElementById('editMsg').textContent='保存中…';
+  try {
+    await apiPost('/api/assign', {assignments:[{optionId:editIt.optionId, name:editIt.name, apiCat:editIt.apiCat, category:cat, type:editType}]});
+    closeEdit(); reload();
+  } catch(e){ onErr(e); }
+}
+
+/* ====== util ====== */
+function esc(s){ return String(s==null?'':s).replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m])); }
+function showLoad(msg){ document.getElementById('loadingMsg').textContent=msg||'読込中…'; document.getElementById('loading').classList.add('on'); }
+function hideLoad(){ document.getElementById('loading').classList.remove('on'); }
+function onErr(e){ hideLoad(); alert('エラー: '+(e && e.message ? e.message : e)); console.error(e); }
+</script>
+</body>
+</html>

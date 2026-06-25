@@ -1,0 +1,12 @@
+{
+  "name": "clinic-sales-dashboard",
+  "version": "1.0.0",
+  "private": true,
+  "description": "3院売上集計ダッシュボード (medical-force API / Supabase)",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}
