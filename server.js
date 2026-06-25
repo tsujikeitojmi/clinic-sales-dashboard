@@ -425,10 +425,18 @@ function buildMonthlyTrend(clinicKey, year, month, currentByCat){
     if (y===year && m===month) byCat = currentByCat;
     else { const raw = readRaw(clinicKey, y, m); byCat = raw ? aggregateClinic(raw, masterMap, null) : null; }
     const sum = byCat ? sumByCat(byCat) : null;
+    // カテゴリ別の内訳（フロントの月別グラフをカテゴリで絞り込めるように）
+    const cats = {};
+    if (byCat) Object.keys(byCat).forEach(cat=>{
+      if (cat===UNCLASSIFIED) return;
+      const c = byCat[cat];
+      cats[cat] = { sales:c.sales, count:c.count, 通常:c['通常'], CP:c['CP'], 媒体:c['媒体'] };
+    });
     out.push({
       label:`${y}/${('0'+m).slice(-2)}`,
       sales:sum?sum.sales:0, count:sum?sum.count:0,
       通常:sum?sum.通常:0, CP:sum?sum.CP:0, 媒体:sum?sum.媒体:0, hasData:!!byCat,
+      cats,
     });
   }
   return out;

@@ -190,7 +190,7 @@
 
     <!-- 月別グラフは全幅（過去12か月） -->
     <div class="panel">
-      <h3>月別売上推移（棒）＋ 件数（折れ線）<span class="muted" style="font-weight:400;font-size:12px">　選択月から過去12か月</span></h3>
+      <h3>月別売上推移（棒）＋ 件数（折れ線）<span id="chartScope" class="muted" style="font-weight:400;font-size:12px">　選択月から過去12か月</span></h3>
       <div class="chart-wrap"><canvas id="chart"></canvas></div>
       <div class="muted" style="font-size:11px;margin-top:8px">
         ※ 過去月はキャッシュ(data/cache)にある月のみ表示。各月を一度ダッシュボード表示すると蓄積されます。
@@ -454,7 +454,7 @@ function buildAccordion(){
   document.getElementById('accordion').innerHTML = html;
 }
 
-function selectCat(cat){ curCat = (cat===curCat) ? null : cat; buildAccordion(); renderCards2(); renderItems(); updateCatBadge(); }
+function selectCat(cat){ curCat = (cat===curCat) ? null : cat; buildAccordion(); renderCards2(); renderChart(); renderItems(); updateCatBadge(); }
 
 function updateCatBadge(){
   const b = document.getElementById('catBadge');
@@ -483,16 +483,24 @@ function renderCards2(){
 function renderChart(){
   const m = DATA.monthly;
   const labels = m.map(x=>x.label);
+  // カテゴリ絞り込み中はその月のカテゴリ別内訳を、未選択(全体)なら月の合計を使う
+  const pick = (x, f)=>{
+    if (!curCat) return x[f] || 0;
+    const c = x.cats && x.cats[curCat];
+    return c ? (c[f] || 0) : 0;
+  };
+  const scope = document.getElementById('chartScope');
+  if (scope) scope.textContent = curCat ? `　${curCat}・過去12か月` : '　選択月から過去12か月';
   const ctx = document.getElementById('chart');
   if (chart) chart.destroy();
   chart = new Chart(ctx, {
     data:{
       labels,
       datasets:[
-        {type:'bar', label:'通常', data:m.map(x=>x.通常), backgroundColor:'#8aa9cf', stack:'s', order:3, borderRadius:3},
-        {type:'bar', label:'CP',   data:m.map(x=>x.CP),   backgroundColor:'#e0ab6c', stack:'s', order:3, borderRadius:3},
-        {type:'bar', label:'媒体', data:m.map(x=>x.媒体), backgroundColor:'#cf8fa9', stack:'s', order:3, borderRadius:3},
-        {type:'line',label:'件数', data:m.map(x=>x.count), yAxisID:'y1',
+        {type:'bar', label:'通常', data:m.map(x=>pick(x,'通常')), backgroundColor:'#8aa9cf', stack:'s', order:3, borderRadius:3},
+        {type:'bar', label:'CP',   data:m.map(x=>pick(x,'CP')),   backgroundColor:'#e0ab6c', stack:'s', order:3, borderRadius:3},
+        {type:'bar', label:'媒体', data:m.map(x=>pick(x,'媒体')), backgroundColor:'#cf8fa9', stack:'s', order:3, borderRadius:3},
+        {type:'line',label:'件数', data:m.map(x=>pick(x,'count')), yAxisID:'y1',
            borderColor:'#7fa99b', backgroundColor:'#7fa99b', tension:.35, order:1, pointRadius:3},
       ]
     },
