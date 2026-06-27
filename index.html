@@ -33,7 +33,7 @@
 
     /* 院アコーディオン */
     .accordion{flex:1;overflow:auto;display:flex;flex-direction:column;gap:4px;min-height:0}
-    .acc-clinic{border-radius:12px;overflow:hidden}
+    .acc-clinic{border-radius:12px;overflow:hidden;flex-shrink:0}
     .acc-head{cursor:pointer;padding:11px 12px;border-radius:12px;display:flex;align-items:center;gap:10px;
       border:1px solid transparent;transition:background .12s}
     .acc-head:hover{background:var(--panel2)}
@@ -140,6 +140,8 @@
     .group-list button:hover{background:var(--accent-tint);border-color:#efd9dd}
     .group-list button .gname{flex:1}
     .group-list button .sg{font-size:10px;background:var(--accent);color:#fff;border-radius:20px;padding:2px 10px;font-weight:700}
+    .group-list button .gbread{font-size:10px;color:var(--sub);display:block;margin-top:2px}
+    .group-list .ghdr{padding:3px 10px 2px;font-size:10px;color:var(--sub);font-weight:700;letter-spacing:.05em;background:var(--panel2);border-radius:6px;margin-top:4px}
     .group-list button.reco{border-color:var(--accent);background:var(--accent-tint)}
     .group-list button.cur{border-color:var(--accent2);background:var(--accent2-tint)}
     .group-list button.cur .sg{background:var(--accent2)}
@@ -154,6 +156,9 @@
     .pill{display:inline-block;font-size:11px;padding:2px 9px;border-radius:20px;background:var(--panel2);color:var(--sub)}
     .auto-note{background:var(--accent2-tint);border:1px solid #d8e7e1;color:#4f7d70;
       border-radius:10px;padding:9px 12px;font-size:12px;margin:2px 0 12px}
+    .tree-arw{flex:0 0 auto;color:var(--sub);font-size:9px;transition:transform .15s;cursor:pointer;padding:0 4px 0 0;user-select:none}
+    .tree-arw.open{transform:rotate(90deg)}
+    .tree-pad{flex:0 0 13px}
     .loading{position:fixed;inset:0;display:none;align-items:center;justify-content:center;
       background:rgba(247,245,244,.72);backdrop-filter:blur(1px);z-index:60;font-size:14px;color:var(--txt)}
     .loading.on{display:flex}
@@ -283,6 +288,8 @@ let curCat = null;        // 選択中カテゴリ（null=全体）
 let rankKey = 'sales';
 let chart = null;
 let PENDING = null;
+let TREE_MAP = {};
+let expandedTreeCats = new Set();
 
 const yen = n => '¥' + (Number(n)||0).toLocaleString('ja-JP');
 const num = n => (Number(n)||0).toLocaleString('ja-JP');
@@ -307,6 +314,7 @@ window.addEventListener('load', async () => {
   showLoad('設定読込…');
   try {
     CFG = await api('/api/config');
+    buildTreeMap(CFG.categoryTree||[]);
     curClinic = CFG.clinics[0].key;
     buildPeriodSelectors();
     reload();
@@ -345,6 +353,7 @@ async function reload(refresh){
     DATA = await api('/api/dashboard', params);
     OVERVIEW = await api('/api/overview', {year:y, month:m});
     render(); hideLoad();
+    runAutoAssignBg(); // バックグラウンドで自動振り分け（待たない）
   } catch(e){ onErr(e); }
 }
 
@@ -407,6 +416,91 @@ function renderCards(){
     </div>`).join('');
 }
 
+/* ====== カテゴリ階層ツリー ====== */
+function getCatBreadcrumb(name){
+  const parts = [];
+  let node = TREE_MAP[name];
+  while (node && node.parent){ parts.unshift(node.parent); node = TREE_MAP[node.parent]; }
+  return parts.join(' › ');
+}
+function getRootCat(name){
+  let node = TREE_MAP[name], root = name;
+  while (node && node.parent){ root = node.parent; node = TREE_MAP[node.parent]; }
+  return root;
+}
+function makeCatBtn(c, extraClass, suggestCat, onclickExpr){
+  const bread = getCatBreadcrumb(c);
+  const isSuggest = c === suggestCat;
+  return `<button class="${extraClass||''}" data-cat="${esc(c)}" onclick="${onclickExpr}">
+    <span class="gname">${esc(c)}</span>
+    ${bread?`<span class="gbread">${esc(bread)}</span>`:''}
+    ${isSuggest?'<span class="sg">おすすめ</span>':''}
+  </button>`;
+}
+function renderGroupedList(cats, suggestCat, onclickTpl, currentCat){
+  const suggest = suggestCat && cats.includes(suggestCat) ? suggestCat : null;
+  const others = cats.filter(c=>c!==suggest);
+  const rootsSeen = [], byRoot = {};
+  others.forEach(c=>{
+    const r = getRootCat(c);
+    if (!byRoot[r]){ byRoot[r]=[]; rootsSeen.push(r); }
+    byRoot[r].push(c);
+  });
+  let html = '';
+  if (suggest){
+    const cls = 'reco' + (suggest===currentCat?' cur':'');
+    html += makeCatBtn(suggest, cls, suggest, onclickTpl.replace('__CAT__', suggest));
+  }
+  rootsSeen.forEach(root=>{
+    const items = byRoot[root];
+    if (items.length>1 || items[0]!==root)
+      html += `<div class="ghdr">${esc(root)}</div>`;
+    items.forEach(c=>{
+      const cls = c===currentCat?'cur':'';
+      html += makeCatBtn(c, cls, suggest, onclickTpl.replace('__CAT__', c));
+    });
+  });
+  return html;
+}
+function buildTreeMap(nodes, par){
+  if (!par) TREE_MAP = {};
+  (nodes||[]).forEach(node=>{
+    TREE_MAP[node.name] = {name:node.name, children:node.children||[], parent:par||null};
+    if (node.children&&node.children.length) buildTreeMap(node.children, node.name);
+  });
+}
+function getCatAndDescendants(name){
+  const node = TREE_MAP[name];
+  const all = [name];
+  if (node&&node.children) node.children.forEach(c=>all.push(...getCatAndDescendants(c.name)));
+  return all;
+}
+function getTreeSales(name, catMap){
+  return getCatAndDescendants(name).reduce((s,n)=>s+((catMap[n]&&catMap[n].sales)||0),0);
+}
+function toggleTreeCat(name){
+  if (expandedTreeCats.has(name)) expandedTreeCats.delete(name);
+  else expandedTreeCats.add(name);
+  buildAccordion();
+}
+function renderCatNodes(nodes, catMap, depth){
+  return (nodes||[]).map(node=>{
+    const nm = node.name;
+    const isParent = node.children&&node.children.length>0;
+    const isExp = expandedTreeCats.has(nm);
+    const sales = getTreeSales(nm, catMap);
+    const sel = curCat===nm;
+    const pl = 10 + depth*14;
+    let html = `<div class="row${sel?' on':''}" style="padding-left:${pl}px" data-cat="${esc(nm)}" onclick="selectCat(this.dataset.cat)">`;
+    html += isParent
+      ? `<span class="tree-arw${isExp?' open':''}" onclick="event.stopPropagation();toggleTreeCat('${esc(nm)}')" title="${isExp?'閉じる':'展開'}">▶</span>`
+      : `<span class="tree-pad"></span>`;
+    html += `<span class="nm">${esc(nm)}</span><span class="vl">${yen(sales)}</span></div>`;
+    if (isParent&&isExp) html += renderCatNodes(node.children, catMap, depth+1);
+    return html;
+  }).join('');
+}
+
 /* ====== サイドバー：院アコーディオン ====== */
 function buildAccordion(){
   const canon = CFG.categories || [];
@@ -425,14 +519,19 @@ function buildAccordion(){
       if (map['★未分類']) cats.push(map['★未分類']);
       badge = `<span class="cnt">${cats.filter(x=>x.sales>0 && x.category!=='★未分類').length}</span>`;
 
+      const treeNames = new Set(Object.keys(TREE_MAP));
       const rows = [`<div class="row ${curCat===null?'on':''}" onclick="selectCat(null)">
           <span class="nm">▣ 全体</span><span class="vl">${yen(DATA.summary.totalSales)}</span></div>`];
-      cats.forEach(x=>{
-        const unc = x.category==='★未分類';
-        rows.push(`<div class="row ${unc?'unc':''} ${x.sales===0?'zero':''} ${curCat===x.category?'on':''}"
+      rows.push(renderCatNodes(CFG.categoryTree||[], map, 0));
+      // ツリーに含まれないカテゴリ（除: ★未分類）を末尾に追加
+      cats.filter(x=>!treeNames.has(x.category)&&x.category!=='★未分類').forEach(x=>{
+        rows.push(`<div class="row ${x.sales===0?'zero':''} ${curCat===x.category?'on':''}"
             data-cat="${esc(x.category)}" onclick="selectCat(this.dataset.cat)">
             <span class="nm">${esc(x.category)}</span><span class="vl">${yen(x.sales)}</span></div>`);
       });
+      if (map['★未分類']) rows.push(`<div class="row unc ${curCat==='★未分類'?'on':''}"
+          data-cat="★未分類" onclick="selectCat(this.dataset.cat)">
+          <span class="nm">★未分類</span><span class="vl">${yen(map['★未分類'].sales)}</span></div>`);
       body = rows.join('');
     } else {
       const ov = (OVERVIEW||[]).find(o=>o.key===c.key);
@@ -454,7 +553,11 @@ function buildAccordion(){
   document.getElementById('accordion').innerHTML = html;
 }
 
-function selectCat(cat){ curCat = (cat===curCat) ? null : cat; buildAccordion(); renderCards2(); renderChart(); renderItems(); updateCatBadge(); }
+function selectCat(cat){
+  curCat = (cat===curCat) ? null : cat;
+  if (curCat && TREE_MAP[curCat] && TREE_MAP[curCat].children.length>0) expandedTreeCats.add(curCat);
+  buildAccordion(); renderCards2(); renderChart(); renderItems(); updateCatBadge();
+}
 
 function updateCatBadge(){
   const b = document.getElementById('catBadge');
@@ -462,16 +565,21 @@ function updateCatBadge(){
   else b.style.display='none';
 }
 
-/* カテゴリ選択時はカード値をそのカテゴリで上書き */
+/* カテゴリ選択時はカード値をそのカテゴリ（子孫含む）で上書き */
 function renderCards2(){
   if (!curCat){ renderCards(); return; }
-  const c = DATA.categories.find(x=>x.category===curCat);
-  if (!c){ renderCards(); return; }
+  const filterSet = new Set(getCatAndDescendants(curCat));
+  const matched = DATA.categories.filter(x=>filterSet.has(x.category));
+  if (!matched.length){ renderCards(); return; }
+  const sales = matched.reduce((s,c)=>s+c.sales,0);
+  const count = matched.reduce((s,c)=>s+c.count,0);
+  const CP    = matched.reduce((s,c)=>s+(c.CP||0),0);
+  const media = matched.reduce((s,c)=>s+(c.媒体||0),0);
   const cards = [
-    {k:`${curCat} 売上`, v:yen(c.sales)},
-    {k:`${curCat} 件数`, v:num(c.count)+' 件'},
-    {k:'平均単価', v:yen(c.count?Math.round(c.sales/c.count):0)},
-    {k:'CP・媒体', v:yen(c.CP+c.媒体), s:`CP ${yen(c.CP)} / 媒体 ${yen(c.媒体)}`, accent:true},
+    {k:`${curCat} 売上`, v:yen(sales)},
+    {k:`${curCat} 件数`, v:num(count)+' 件'},
+    {k:'平均単価', v:yen(count?Math.round(sales/count):0)},
+    {k:'CP・媒体', v:yen(CP+media), s:`CP ${yen(CP)} / 媒体 ${yen(media)}`, accent:true},
   ];
   document.getElementById('cards').innerHTML = cards.map(c=>`
     <div class="card ${c.accent?'accent':''}">
@@ -486,8 +594,9 @@ function renderChart(){
   // カテゴリ絞り込み中はその月のカテゴリ別内訳を、未選択(全体)なら月の合計を使う
   const pick = (x, f)=>{
     if (!curCat) return x[f] || 0;
-    const c = x.cats && x.cats[curCat];
-    return c ? (c[f] || 0) : 0;
+    return getCatAndDescendants(curCat).reduce((s,n)=>{
+      const c = x.cats && x.cats[n]; return s + (c ? (c[f]||0) : 0);
+    }, 0);
   };
   const scope = document.getElementById('chartScope');
   if (scope) scope.textContent = curCat ? `　${curCat}・過去12か月` : '　選択月から過去12か月';
@@ -553,7 +662,9 @@ function renderCatTable(){
 /* ====== 施術内訳（マスタ振り分けの中身：optionId単位） ====== */
 function renderItems(){
   const all = (DATA.items || []);
-  const items = curCat ? all.filter(x=>x.category===curCat) : all;
+  let items;
+  if (!curCat){ items = all; }
+  else { const fs=new Set(getCatAndDescendants(curCat)); items=all.filter(x=>fs.has(x.category)); }
   document.getElementById('itemsTitle').textContent = `施術内訳（${curCat || '全カテゴリ'}）`;
   const totS = items.reduce((s,x)=>s+x.sales,0), totC = items.reduce((s,x)=>s+x.count,0);
   document.getElementById('itemsHint').textContent =
@@ -579,26 +690,44 @@ let curIdx = 0;        // 表示中のカード
 let knownCats = [];    // 既存グループ（振り分けで増える）
 let curType = '通常';  // 現カードの種別
 let assignedCount = 0; // このセッションで手動振り分けした数
-let autoAssigned = 0;  // 自動振り分けした数
+let autoAssigned = 0;  // 自動振り分けした数（バックグラウンド分を含む）
+let bgAutoAssigned = 0; // バックグラウンド自動振り分けの件数
 let pendingScope = 'all';  // 'all'=キャッシュ済み全月 / 'month'=選択中の月だけ
+
+/* ページ読み込み後にバックグラウンドで自動振り分けを実行（ボタン待ちを無くす） */
+async function runAutoAssignBg(){
+  bgAutoAssigned = 0;
+  try {
+    const y=+document.getElementById('yearSel').value, m=+document.getElementById('monthSel').value;
+    const r = await apiPost('/api/auto-assign', {clinic:curClinic, year:y, month:m, scope:'all'});
+    bgAutoAssigned = r.assigned || 0;
+    if (bgAutoAssigned > 0){
+      const d = await api('/api/dashboard', {clinic:curClinic, year:y, month:m});
+      DATA = d;
+      document.getElementById('pendingCount').textContent = num(DATA.pendingCount);
+      buildAccordion();
+    }
+  } catch(e){ /* サイレント */ }
+}
 
 async function openPending(scope){
   if (scope) pendingScope = scope;
   const modal = document.getElementById('pendingModal');
   modal.classList.add('on');
   document.getElementById('pendingMsg').textContent='';
-  document.getElementById('itemCard').innerHTML='<div class="muted">かんたんなものを自動振り分け中…</div>';
+  document.getElementById('itemCard').innerHTML='<div class="muted">読込中…</div>';
   document.getElementById('groupList').innerHTML='';
   const y=+document.getElementById('yearSel').value, m=+document.getElementById('monthSel').value;
-  // スコープ切替トグル＋説明
   const toggle = ['all','month'].map(s=>
     `<button class="${s===pendingScope?'on':''}" onclick="openPending('${s}')">${s==='all'?'全期間（取得済み全月）':'この月だけ'}</button>`).join('');
   document.getElementById('pendingSub').innerHTML =
     `<span class="scope-toggle">${toggle}</span>　${DATA?esc(DATA.clinic):''} ・ 金額の大きい順`;
   try {
     const body = {clinic:curClinic, year:y, month:m, scope:pendingScope};
+    // バックグラウンドで未処理のものだけ追加実行（大半は既に完了しているので即返る）
     const auto = await apiPost('/api/auto-assign', body);
-    autoAssigned = auto.assigned || 0;
+    autoAssigned = (auto.assigned || 0) + bgAutoAssigned;
+    bgAutoAssigned = 0;
     PENDING = await api('/api/pending', body);
     knownCats = PENDING.knownCategories.slice();
     curIdx = 0; assignedCount = 0;
@@ -645,8 +774,7 @@ function renderCard(){
   curCats = (r.categoriesRanked && r.categoriesRanked.length) ? r.categoriesRanked.slice() : knownCats.slice();
 
   list.innerHTML =
-    curCats.map((c,i)=>`<button class="${c===r.suggestCategory?'reco':''}" onclick="pickGroup(curCats[${i}])">
-        <span class="gname">${esc(c)}</span>${c===r.suggestCategory?'<span class="sg">おすすめ</span>':''}</button>`).join('')
+    renderGroupedList(curCats, r.suggestCategory, "pickGroup(this.dataset.cat)", null)
     + `<button class="exg" onclick="pickGroup('除外')">✕ 除外（集計に入れない）</button>`;
 }
 let curCats = [];
@@ -697,8 +825,7 @@ function renderEdit(){
   editCats = (CFG.categories||[]).slice();
   if (it.category && it.category!=='★未分類' && !editCats.includes(it.category)) editCats.unshift(it.category);
   document.getElementById('editList').innerHTML =
-    editCats.map((c,i)=>`<button class="${c===it.category?'cur':''}" onclick="pickEdit(editCats[${i}])">
-        <span class="gname">${esc(c)}</span>${c===it.category?'<span class="sg">現在</span>':''}</button>`).join('')
+    renderGroupedList(editCats, it.category, "pickEdit(this.dataset.cat)", it.category)
     + `<button class="exg" onclick="pickEdit('除外')">✕ 除外（集計に入れない）</button>`;
 }
 function setEditType(t){

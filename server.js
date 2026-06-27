@@ -44,10 +44,55 @@ const UNCLASSIFIED = '★未分類';
 
 // 施術カテゴリ（グループ）初期一覧。data/categories.json で編集・追加できる
 const DEFAULT_CATEGORIES = [
-  'ポテンツァ','フォトフェイシャル','アクネフォト','脱毛','ピコレーザー','ピコスポット',
-  'デンシティ','ハイコックス','ボトックス','ヒアルロン酸','肌育注射','ショートスレッド',
-  '脂肪溶解注射','HIFU','ルメッカ','インモード','ダーマペン','ピーリング','ハイドラ','ケアシス',
+  'ポテンツァ',
+  'CP-25','S-16','S-25','A1-15','ダイヤモンド',
+  'BENEV','マックーム','リジュラン','ジュベルック','ボトックスアラガン',
+  'エクソソーム','スネコス','デイリースペシャル(マックーム+エクソソーム)',
+  'デイリープレミアム(ジュベルック+エクソソーム)','ACRS',
+  'フォトフェイシャル','アクネフォト','脱毛',
+  'ピコレーザー','ピコスポット','ピコトーニング','ピコフラクショナル','ピコダブル',
+  'デンシティ','ハイコックス','スキンボトックス','ジュベリジュ','その他の薬剤',
+  'ボトックス','ヒアルロン酸','肌育注射','ショートスレッド',
+  '脂肪溶解注射','HIFU','ルメッカ','インモード','ダーマペン',
+  'ピーリング','マッサージピール','ミラノピール','ララドクター','その他のピーリング',
+  'ハイドラ','ケアシス',
 ];
+
+// サイドバー用カテゴリ階層ツリー（表示・集計の親子関係のみ定義、振り分けは DEFAULT_CATEGORIES の葉名を使用）
+const CATEGORY_TREE = [
+  { name:'ポテンツァ', children:[
+    { name:'CP-25', children:[
+      { name:'BENEV' }, { name:'マックーム' }, { name:'リジュラン' },
+      { name:'ジュベルック' }, { name:'ボトックスアラガン' }, { name:'エクソソーム' },
+      { name:'スネコス' }, { name:'デイリースペシャル(マックーム+エクソソーム)' },
+      { name:'デイリープレミアム(ジュベルック+エクソソーム)' }, { name:'ACRS' },
+    ]},
+    { name:'S-16' }, { name:'S-25' }, { name:'A1-15' }, { name:'ダイヤモンド' },
+  ]},
+  { name:'フォトフェイシャル' }, { name:'アクネフォト' }, { name:'脱毛' },
+  { name:'ピコレーザー', children:[
+    { name:'ピコスポット' }, { name:'ピコトーニング' }, { name:'ピコフラクショナル' }, { name:'ピコダブル' },
+  ]}, { name:'デンシティ' },
+  { name:'ハイコックス', children:[
+    { name:'スキンボトックス' }, { name:'リジュラン' }, { name:'ジュベルック' },
+    { name:'スネコス' }, { name:'ジュベリジュ' }, { name:'エクソソーム' },
+    { name:'ACRS' }, { name:'その他の薬剤' },
+  ]},
+  { name:'ボトックス' }, { name:'ヒアルロン酸' },
+  { name:'肌育注射' }, { name:'ショートスレッド' }, { name:'脂肪溶解注射' },
+  { name:'HIFU' }, { name:'ルメッカ' }, { name:'インモード' }, { name:'ダーマペン' },
+  { name:'ピーリング', children:[
+    { name:'マッサージピール' }, { name:'ミラノピール' }, { name:'ララドクター' }, { name:'その他のピーリング' },
+  ]},
+  { name:'ハイドラ' }, { name:'ケアシス' },
+];
+
+// 子を持つカテゴリ名のSet（振り分け選択肢から除外する）
+function collectParentNames(nodes, out=new Set()){
+  (nodes||[]).forEach(n=>{ if(n.children&&n.children.length){ out.add(n.name); collectParentNames(n.children,out); } });
+  return out;
+}
+const PARENT_CAT_NAMES = collectParentNames(CATEGORY_TREE);
 
 /* ====================== .env 読み込み（依存なし簡易パーサ） ====================== */
 function loadEnv(){
@@ -106,6 +151,22 @@ async function sbUpsert(table, rows){
   if (!r.ok) throw new Error('Supabase upsert '+table+' '+r.status+' '+(await r.text()).slice(0,200));
 }
 
+// --- Supabase キャッシュ（mfdash_cache テーブル） ---
+async function sbCacheGet(clinicKey, year, month){
+  if (!SB_ON) return null;
+  try {
+    const rows = await sbGet(`mfdash_cache?clinic_key=eq.${clinicKey}&year=eq.${year}&month=eq.${month}&select=fetched_at,cache_data`);
+    if (!rows || !rows.length) return null;
+    return { fetchedAt: rows[0].fetched_at, values: rows[0].cache_data };
+  } catch(e){ console.error('sbCacheGet失敗:', e.message); return null; }
+}
+async function sbCacheUpsert(clinicKey, year, month, fetchedAt, values){
+  if (!SB_ON) return;
+  try {
+    await sbUpsert('mfdash_cache', [{ clinic_key:clinicKey, year, month, fetched_at:fetchedAt, cache_data:values }]);
+  } catch(e){ console.error('sbCacheUpsert失敗:', e.message); }
+}
+
 // --- ローカルJSON（バックアップ/フォールバック） ---
 function localReadMaster(){ try{ return JSON.parse(fs.readFileSync(MASTER,'utf8'))||[]; }catch(e){ return []; } }
 function localWriteMaster(arr){ try{ fs.writeFileSync(MASTER, JSON.stringify(arr,null,2),'utf8'); }catch(e){} }
@@ -140,9 +201,19 @@ async function loadState(){
       await sbUpsert('mfdash_categories', seed.map((n,i)=>({name:n,sort:i}))); CAT_ARR = seed;
       console.log('  → categories をSupabaseへ移行:', seed.length, '件');
     }
+    // 新カテゴリ追加（DEFAULT_CATEGORIESに増えたものをSupabaseへ反映）
+    const missing = DEFAULT_CATEGORIES.filter(n=>!CAT_ARR.includes(n));
+    if (missing.length){
+      await sbUpsert('mfdash_categories', missing.map((n,i)=>({name:n,sort:CAT_ARR.length+i})));
+      CAT_ARR.push(...missing);
+      localWriteCats(CAT_ARR);
+      console.log('  → 新カテゴリをSupabaseへ追加:', missing.join(', '));
+    }
   } else {
     MASTER_ROWS = localReadMaster();
     CAT_ARR = localReadCats(); if (!CAT_ARR.length) CAT_ARR = DEFAULT_CATEGORIES.slice();
+    const missing = DEFAULT_CATEGORIES.filter(n=>!CAT_ARR.includes(n));
+    if (missing.length){ CAT_ARR.push(...missing); localWriteCats(CAT_ARR); }
   }
 }
 
@@ -314,15 +385,24 @@ function aggregateItems(values, masterMap){
    集計後ではなく「取得した生データ(values)」をキャッシュする。
    こうすると施術マスタの振り分けを変えても、再集計でちゃんと反映される。 */
 function cacheFile(clinicKey, year, month){ return path.join(CACHE_DIR, `${clinicKey}_${year}_${month}.json`); }
-function readRawFull(clinicKey, year, month){
+async function readRawFull(clinicKey, year, month){
   const f = cacheFile(clinicKey, year, month);
-  if (!fs.existsSync(f)) return null;
-  try { const j = JSON.parse(fs.readFileSync(f,'utf8')); return j && j.values ? j : null; } catch(e){ return null; }
+  if (fs.existsSync(f)){
+    try { const j = JSON.parse(fs.readFileSync(f,'utf8')); if (j && j.values) return j; } catch(e){}
+  }
+  // ローカルになければSupabaseから取得してローカルにも保存
+  const sb = await sbCacheGet(clinicKey, year, month);
+  if (sb){
+    try { fs.writeFileSync(f, JSON.stringify({ fetchedAt:sb.fetchedAt, values:sb.values }), 'utf8'); } catch(e){}
+    return sb;
+  }
+  return null;
 }
-function readRaw(clinicKey, year, month){ const j = readRawFull(clinicKey, year, month); return j ? j.values : null; }
-function writeRaw(clinicKey, year, month, values){
-  fs.writeFileSync(cacheFile(clinicKey, year, month),
-    JSON.stringify({ fetchedAt:new Date().toISOString(), values }), 'utf8');
+async function readRaw(clinicKey, year, month){ const j = await readRawFull(clinicKey, year, month); return j ? j.values : null; }
+async function writeRaw(clinicKey, year, month, values){
+  const fetchedAt = new Date().toISOString();
+  fs.writeFileSync(cacheFile(clinicKey, year, month), JSON.stringify({ fetchedAt, values }), 'utf8');
+  sbCacheUpsert(clinicKey, year, month, fetchedAt, values); // Supabaseへも保存（待たない）
 }
 function cacheExists(clinicKey, year, month){ return fs.existsSync(cacheFile(clinicKey, year, month)); }
 
@@ -331,12 +411,12 @@ function cacheExists(clinicKey, year, month){ return fs.existsSync(cacheFile(cli
 //  refresh=true       : APIから取り直してキャッシュを更新（「最新取得」ボタン用）。
 async function getValues(clinicKey, year, month, refresh){
   if (!refresh){
-    const j = readRawFull(clinicKey, year, month);
+    const j = await readRawFull(clinicKey, year, month);
     if (j) return { values:j.values, cached:true, fetchedAt:j.fetchedAt };
   }
   const clinic = getClinic(clinicKey);
   const values = await fetchClinicMonth(clinic, year, month);
-  writeRaw(clinicKey, year, month, values);
+  await writeRaw(clinicKey, year, month, values);
   return { values, cached:false, fetchedAt:new Date().toISOString() };
 }
 
@@ -350,22 +430,51 @@ const CATEGORY_ALIAS = {
   'フォトフェイシャル':['フォトフェイシャル','フォトフェイス','フォト','IPL','ステラ','M22'],
   'アクネフォト':['アクネ'],
   '脱毛':['脱毛'],
-  'ピコレーザー':['ピコレーザー','ピコトーニング','ピコフラクショナル','ピコ'],
+  'ピコレーザー':['ピコレーザー','ピコ'],
   'ピコスポット':['ピコスポット','スポット','シミ取り','シミ'],
+  'ピコトーニング':['ピコトーニング','ピコトーン'],
+  'ピコフラクショナル':['ピコフラクショナル','ピコフラク'],
+  'ピコダブル':['ピコダブル'],
   'デンシティ':['デンシティ'],
   'ハイコックス':['ハイコックス','ハイドラコックス','コックス'],
   'ボトックス':['ボトックス','ボツリヌス','ボツ'],
   'ヒアルロン酸':['ヒアルロン'],
-  '肌育注射':['肌育','水光','スネコス','リジュラン','ジュベルック','プロファイロ'],
+  '肌育注射':['肌育','水光','プロファイロ'],
   'ショートスレッド':['ショートスレッド','スレッド','糸'],
   '脂肪溶解注射':['脂肪溶解','脂肪','BNLS','カベリン','チンセラ'],
   'HIFU':['HIFU','ハイフ','ウルトラフォーマー','ソノクイーン'],
   'ルメッカ':['ルメッカ'],
   'インモード':['インモード','フォルマ','ファクトラ','モルフェ'],
   'ダーマペン':['ダーマペン','ヴェルベット'],
-  'ピーリング':['ピーリング','ピール','マッサージピール','ミラノリピール','ハイドラピール'],
+  'ピーリング':['ピーリング','ピール'],
   'ハイドラ':['ハイドラフェイシャル','ハイドラ'],
   'ケアシス':['ケアシス'],
+  // ポテンツァ サブカテゴリ
+  'CP-25':['CP-25','CP25'],
+  'S-16':['S-16','S16'],
+  'S-25':['S-25','S25'],
+  'A1-15':['A1-15','A115','A1'],
+  'ダイヤモンド':['ダイヤモンド','ダイヤ'],
+  // CP-25 薬剤
+  'BENEV':['BENEV','ベネブ'],
+  'マックーム':['マックーム','マクーム'],
+  'リジュラン':['リジュラン'],
+  'ジュベルック':['ジュベルック'],
+  'ボトックスアラガン':['アラガン'],
+  'エクソソーム':['エクソソーム','エクソ'],
+  'スネコス':['スネコス'],
+  'デイリースペシャル(マックーム+エクソソーム)':['デイリースペシャル'],
+  'デイリープレミアム(ジュベルック+エクソソーム)':['デイリープレミアム'],
+  'ACRS':['ACRS'],
+  // ハイコックス サブカテゴリ
+  'スキンボトックス':['スキンボトックス','スキンボト'],
+  'ジュベリジュ':['ジュベリジュ'],
+  'その他の薬剤':['その他薬剤'],
+  // ピーリング サブカテゴリ
+  'マッサージピール':['マッサージピール','コスメラン','TCA'],
+  'ミラノピール':['ミラノ','ミラノリ'],
+  'ララドクター':['ララドクター'],
+  'その他のピーリング':['ハイドラピール'],
 };
 function aliasesOf(cat){ return CATEGORY_ALIAS[cat] || [cat]; }
 
@@ -398,7 +507,8 @@ function getConfig(){
   const today = new Date();
   return {
     clinics: CLINIC_LIST.map(c=>({key:c.key, name:c.name, color:c.color})),
-    categories: readCategories(),
+    categories: readCategories().filter(c=>!PARENT_CAT_NAMES.has(c)),
+    categoryTree: CATEGORY_TREE,
     types: TYPES_NEW,
     year:  today.getFullYear(),
     month: today.getMonth()+1,
@@ -415,7 +525,7 @@ function sumByCat(byCat){
   return s;
 }
 
-function buildMonthlyTrend(clinicKey, year, month, currentByCat){
+async function buildMonthlyTrend(clinicKey, year, month, currentByCat){
   const masterMap = loadMasterMap();
   const out = [];
   for (let i=11;i>=0;i--){   // 選択月から過去12か月
@@ -423,7 +533,7 @@ function buildMonthlyTrend(clinicKey, year, month, currentByCat){
     const y = d.getFullYear(), m = d.getMonth()+1;
     let byCat;
     if (y===year && m===month) byCat = currentByCat;
-    else { const raw = readRaw(clinicKey, y, m); byCat = raw ? aggregateClinic(raw, masterMap, null) : null; }
+    else { const raw = await readRaw(clinicKey, y, m); byCat = raw ? aggregateClinic(raw, masterMap, null) : null; }
     const sum = byCat ? sumByCat(byCat) : null;
     // カテゴリ別の内訳（フロントの月別グラフをカテゴリで絞り込めるように）
     const cats = {};
@@ -473,31 +583,37 @@ async function getDashboard(clinicKey, year, month, refresh){
     summary:{ totalSales, totalCount, cpSales, mediaSales, avgPrice: totalCount?Math.round(totalSales/totalCount):0 },
     categories,
     items: aggregateItems(values, masterMap),  // 施術(optionId)単位の内訳
-    monthly: buildMonthlyTrend(clinicKey, year, month, byCat),
+    monthly: await buildMonthlyTrend(clinicKey, year, month, byCat),
     rankings,
     pendingCount: byCat[UNCLASSIFIED] ? byCat[UNCLASSIFIED].count : 0,
   };
 }
 
 // 全院のサイドバー用：キャッシュ済みの院だけ集計して返す（APIは叩かない＝軽い）
-function getOverview(year, month){
+async function getOverview(year, month){
   const masterMap = loadMasterMap();
-  return CLINIC_LIST.map(c=>{
-    const raw = readRaw(c.key, year, month);
+  return Promise.all(CLINIC_LIST.map(async c=>{
+    const raw = await readRaw(c.key, year, month);
     if (!raw) return { key:c.key, name:c.name, color:c.color, cached:false, totalSales:0, categories:[] };
     const byCat = aggregateClinic(raw, masterMap, null);
     const categories = Object.keys(byCat).map(cat=>({ category:cat, sales:byCat[cat].sales, count:byCat[cat].count }))
       .sort((a,b)=>{ if(a.category===UNCLASSIFIED)return 1; if(b.category===UNCLASSIFIED)return -1; return b.sales-a.sales; });
     return { key:c.key, name:c.name, color:c.color, cached:true,
       totalSales: categories.reduce((s,x)=>s+x.sales,0), categories };
-  });
+  }));
 }
 
 // キャッシュ済みの月一覧（このクリニック）
-function listCachedMonths(clinicKey){
-  const out = [];
+async function listCachedMonths(clinicKey){
+  const out = [], seen = new Set();
   const re = new RegExp('^' + clinicKey + '_(\\d+)_(\\d+)\\.json$');
-  fs.readdirSync(CACHE_DIR).forEach(f=>{ const m=f.match(re); if(m) out.push({year:+m[1], month:+m[2]}); });
+  try { fs.readdirSync(CACHE_DIR).forEach(f=>{ const m=f.match(re); if(m){ const k=`${m[1]}_${m[2]}`; if(!seen.has(k)){ seen.add(k); out.push({year:+m[1], month:+m[2]}); } } }); } catch(e){}
+  if (SB_ON){
+    try {
+      const rows = await sbGet(`mfdash_cache?clinic_key=eq.${clinicKey}&select=year,month`);
+      rows.forEach(r=>{ const k=`${r.year}_${r.month}`; if(!seen.has(k)){ seen.add(k); out.push({year:r.year, month:r.month}); } });
+    } catch(e){ console.error('listCachedMonths SB失敗:', e.message); }
+  }
   return out;
 }
 
@@ -506,9 +622,10 @@ async function collectPending(clinicKey, year, month, scope){
   const masterMap = loadMasterMap();
   const pending = {};
   if (scope==='all'){
-    listCachedMonths(clinicKey).forEach(({year:y, month:m})=>{
-      const raw = readRaw(clinicKey, y, m); if (raw) aggregateClinic(raw, masterMap, pending);
-    });
+    const months = await listCachedMonths(clinicKey);
+    for (const {year:y, month:m} of months){
+      const raw = await readRaw(clinicKey, y, m); if (raw) aggregateClinic(raw, masterMap, pending);
+    }
   } else {
     const { values } = await getValues(clinicKey, year, month, false);
     aggregateClinic(values, masterMap, pending);
@@ -534,7 +651,7 @@ function autoPickCategory(name, apiCat, cats){
 // かんたんなものを自動振り分け（scope: 'month' / 'all'）
 async function autoAssign(clinicKey, year, month, scope){
   const pending = await collectPending(clinicKey, year, month, scope);
-  const cats = Array.from(new Set([ ...readCategories(), ...getKnownCategories() ]));
+  const cats = Array.from(new Set([ ...readCategories(), ...getKnownCategories() ])).filter(c=>!PARENT_CAT_NAMES.has(c));
   const assignments = [];
   Object.values(pending).forEach(p=>{
     const cat = autoPickCategory(p.name, p.apiCat, cats);
@@ -546,7 +663,7 @@ async function autoAssign(clinicKey, year, month, scope){
 
 async function getPending(clinicKey, year, month, scope){
   const pending = await collectPending(clinicKey, year, month, scope);
-  const cats = Array.from(new Set([ ...readCategories(), ...getKnownCategories() ]));
+  const cats = Array.from(new Set([ ...readCategories(), ...getKnownCategories() ])).filter(c=>!PARENT_CAT_NAMES.has(c));
   const rows = Object.keys(pending).map(opt=>{
     const p = pending[opt];
     const r = rankCategories(p.name, p.apiCat, cats);   // 近い順に並べ替え＋おすすめ
@@ -555,8 +672,9 @@ async function getPending(clinicKey, year, month, scope){
       suggestCategory:  r.best,
       suggestType: suggestType(p.name + ' ' + p.apiCat) };
   }).sort((a,b)=> b.sales - a.sales);   // 金額の大きい順（影響の大きいものから振り分け）
+  const monthsScanned = scope==='all' ? (await listCachedMonths(clinicKey)).length : 1;
   return { rows, knownCategories: cats, types: TYPES_NEW,
-    scope: scope||'month', monthsScanned: scope==='all' ? listCachedMonths(clinicKey).length : 1 };
+    scope: scope||'month', monthsScanned };
 }
 
 async function assignMaster(assignments){
@@ -613,7 +731,7 @@ const server = http.createServer(async (req, res) => {
       return send(res, 200, d);
     }
     if (u.pathname==='/api/overview'){   // 全院のサイドバー用（キャッシュのみ・API叩かない）
-      return send(res, 200, getOverview(+q.year, +q.month));
+      return send(res, 200, await getOverview(+q.year, +q.month));
     }
     if (u.pathname==='/api/pending'){
       const d = await getPending(q.clinic, +q.year, +q.month, q.scope);
@@ -634,9 +752,37 @@ const server = http.createServer(async (req, res) => {
   }
 });
 
+// ローカルキャッシュをSupabaseへ一括移行（起動時にバックグラウンドで実行）
+async function migrateCacheToSb(){
+  if (!SB_ON) return;
+  try {
+    const sbRows = await sbGet('mfdash_cache?select=clinic_key,year,month');
+    const sbSet = new Set(sbRows.map(r=>`${r.clinic_key}_${r.year}_${r.month}`));
+    const files = fs.existsSync(CACHE_DIR) ? fs.readdirSync(CACHE_DIR) : [];
+    let count = 0;
+    for (const f of files){
+      const m = f.match(/^(CLINIC\d+)_(\d+)_(\d+)\.json$/);
+      if (!m) continue;
+      const [, key, yr, mo] = m;
+      if (!sbSet.has(`${key}_${yr}_${mo}`)){
+        try {
+          const data = JSON.parse(fs.readFileSync(path.join(CACHE_DIR, f), 'utf8'));
+          if (data && data.values){
+            await sbCacheUpsert(key, +yr, +mo, data.fetchedAt||'', data.values);
+            count++;
+          }
+        } catch(e){}
+      }
+    }
+    if (count) console.log(`  → ローカルキャッシュをSupabaseへ移行: ${count}ファイル`);
+    else console.log('  → キャッシュ移行: Supabase既存と同期済み');
+  } catch(e){ console.error('キャッシュ移行失敗:', e.message); }
+}
+
 (async () => {
   try { await loadState(); }
   catch(e){ console.error('保存データの読込に失敗（ローカルにフォールバック）:', e.message); MASTER_ROWS = localReadMaster(); CAT_ARR = localReadCats(); if(!CAT_ARR.length) CAT_ARR = DEFAULT_CATEGORIES.slice(); }
+  if (SB_ON) migrateCacheToSb().catch(e=>console.error('キャッシュ移行失敗:', e.message));
   server.listen(PORT, () => {
     const ok = CLINIC_LIST.filter(c=>process.env[c.key+'_CLIENT_ID']).map(c=>c.name);
     console.log('──────────────────────────────────────────────');
