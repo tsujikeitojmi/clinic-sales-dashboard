@@ -570,7 +570,7 @@ function renderCards2(){
   if (!curCat){ renderCards(); return; }
   const filterSet = new Set(getCatAndDescendants(curCat));
   const matched = DATA.categories.filter(x=>filterSet.has(x.category));
-  if (!matched.length){ renderCards(); return; }
+  // 0件カテゴリ（DATAに出てこない）はそのまま 0 を表示する（累計にフォールバックしない）
   const sales = matched.reduce((s,c)=>s+c.sales,0);
   const count = matched.reduce((s,c)=>s+c.count,0);
   const CP    = matched.reduce((s,c)=>s+(c.CP||0),0);

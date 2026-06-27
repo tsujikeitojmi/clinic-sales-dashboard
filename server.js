@@ -636,16 +636,15 @@ async function collectPending(clinicKey, year, month, scope){
 // 1件ぶんの「かんたん自動振り分け」判定。明確に1カテゴリだけなら そのカテゴリ、そうでなければ null。
 function autoPickCategory(name, apiCat, cats){
   const text = (name||'') + ' ' + (apiCat||'');
-  const matched = [];
-  cats.forEach(cat=>{
-    let sc=0; for (const kw of aliasesOf(cat)){ if (kw && text.indexOf(kw)>=0) sc=Math.max(sc,kw.length); }
-    if (sc>0) matched.push({cat, sc});
-  });
-  const distinct = Array.from(new Set(matched.map(x=>x.cat)));
-  if (distinct.length !== 1) return null;                 // 0件 or 2件以上＝曖昧 → ユーザーへ
-  const maxSc = Math.max(...matched.map(x=>x.sc));
-  if (!(maxSc>=3 || text.indexOf(distinct[0])>=0)) return null;
-  return distinct[0];
+  // 厳しめ：カテゴリ名そのものが施術名/APIカテゴリに literal で含まれる時だけ自動振り分け。
+  // 別名キーワード（フォト→フォトフェイシャル 等）や複合メニューは自動では入れず、手動カードのおすすめに回す。
+  const hits = Array.from(new Set(cats.filter(cat => cat && text.indexOf(cat) >= 0)));
+  if (hits.length === 0) return null;                       // 名前一致なし → ユーザーへ
+  if (hits.length === 1) return hits[0];
+  // 複数一致：名前が入れ子（例「スキンボトックス」⊃「ボトックス」）なら、より具体的（長い）方を採用
+  const longest = hits.reduce((a,b)=> b.length>a.length ? b : a);
+  if (hits.every(h => longest.indexOf(h) >= 0)) return longest;
+  return null;                                              // 無関係な複数該当（複合メニュー等）→ ユーザーへ
 }
 
 // かんたんなものを自動振り分け（scope: 'month' / 'all'）
