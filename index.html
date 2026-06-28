@@ -54,6 +54,9 @@
     .acc-body .row .vl{color:var(--sub);font-variant-numeric:tabular-nums;flex:0 0 auto}
     .acc-body .row.on .vl{color:var(--accent)}
     .acc-body .row.unc .nm{color:var(--accent)}
+    .acc-body .row.excl .nm{color:var(--sub)}
+    .acc-body .row.excl .vl{color:var(--sub)}
+    .acc-body .row.excl{border-top:1px dashed var(--line);margin-top:2px;padding-top:8px}
     .acc-body .row.zero{opacity:.4}
     .acc-body .hint{color:var(--sub);font-size:11px;padding:6px 9px}
 
@@ -156,9 +159,12 @@
     .pill{display:inline-block;font-size:11px;padding:2px 9px;border-radius:20px;background:var(--panel2);color:var(--sub)}
     .auto-note{background:var(--accent2-tint);border:1px solid #d8e7e1;color:#4f7d70;
       border-radius:10px;padding:9px 12px;font-size:12px;margin:2px 0 12px}
-    .tree-arw{flex:0 0 auto;color:var(--sub);font-size:9px;transition:transform .15s;cursor:pointer;padding:0 4px 0 0;user-select:none}
+    .tree-arw{flex:0 0 auto;color:var(--accent);font-size:10px;transition:transform .15s;cursor:pointer;padding:0 6px 0 0;user-select:none}
     .tree-arw.open{transform:rotate(90deg)}
-    .tree-pad{flex:0 0 13px}
+    .tree-dot{flex:0 0 16px;position:relative}
+    .tree-dot::before{content:"";position:absolute;left:4px;top:50%;width:4px;height:4px;border-radius:50%;
+      background:#d8cfc9;transform:translateY(-50%)}
+    /* カテゴリツリー：親＝矢印マーカー / 子＝点マーカー＋インデント（文字の太さ・大きさ・金額色は親子で揃える） */
     .loading{position:fixed;inset:0;display:none;align-items:center;justify-content:center;
       background:rgba(247,245,244,.72);backdrop-filter:blur(1px);z-index:60;font-size:14px;color:var(--txt)}
     .loading.on{display:flex}
@@ -490,11 +496,12 @@ function renderCatNodes(nodes, catMap, depth){
     const isExp = expandedTreeCats.has(nm);
     const sales = getTreeSales(nm, catMap);
     const sel = curCat===nm;
-    const pl = 10 + depth*14;
-    let html = `<div class="row${sel?' on':''}" style="padding-left:${pl}px" data-cat="${esc(nm)}" onclick="selectCat(this.dataset.cat)">`;
+    const pl = 10 + depth*18;
+    const kind = isParent ? 'cat-parent' : 'cat-leaf';
+    let html = `<div class="row ${kind}${sel?' on':''}" style="padding-left:${pl}px" data-cat="${esc(nm)}" onclick="selectCat(this.dataset.cat)">`;
     html += isParent
       ? `<span class="tree-arw${isExp?' open':''}" onclick="event.stopPropagation();toggleTreeCat('${esc(nm)}')" title="${isExp?'閉じる':'展開'}">▶</span>`
-      : `<span class="tree-pad"></span>`;
+      : `<span class="tree-dot"></span>`;
     html += `<span class="nm">${esc(nm)}</span><span class="vl">${yen(sales)}</span></div>`;
     if (isParent&&isExp) html += renderCatNodes(node.children, catMap, depth+1);
     return html;
@@ -512,7 +519,7 @@ function buildAccordion(){
       // 選択中の院：DATAのカテゴリ＋カテゴリ一覧(canonical)をマージ（0円も表示）
       const map={}; DATA.categories.forEach(x=>map[x.category]=x);
       const names=[];
-      DATA.categories.forEach(x=>{ if(x.category!=='★未分類') names.push(x.category); });
+      DATA.categories.forEach(x=>{ if(x.category!=='★未分類' && x.category!=='除外') names.push(x.category); });
       canon.forEach(cat=>{ if(!map[cat]) names.push(cat); });
       let cats = Array.from(new Set(names)).map(cat=> map[cat] || {category:cat,sales:0,count:0});
       cats.sort((a,b)=> b.sales - a.sales);
@@ -532,11 +539,15 @@ function buildAccordion(){
       if (map['★未分類']) rows.push(`<div class="row unc ${curCat==='★未分類'?'on':''}"
           data-cat="★未分類" onclick="selectCat(this.dataset.cat)">
           <span class="nm">★未分類</span><span class="vl">${yen(map['★未分類'].sales)}</span></div>`);
+      // 除外（合計には入らない）。中身を確認して誤りを修正できるよう、専用行として末尾に表示
+      if (map['除外']) rows.push(`<div class="row excl ${curCat==='除外'?'on':''}"
+          data-cat="除外" onclick="selectCat(this.dataset.cat)" title="集計には含まれません。誤って除外した施術を確認・修正できます">
+          <span class="nm">✕ 除外</span><span class="vl">${yen(map['除外'].sales)}</span></div>`);
       body = rows.join('');
     } else {
       const ov = (OVERVIEW||[]).find(o=>o.key===c.key);
       if (ov && ov.cached){
-        badge = `<span class="cnt">${ov.categories.filter(x=>x.sales>0 && x.category!=='★未分類').length}</span>`;
+        badge = `<span class="cnt">${ov.categories.filter(x=>x.sales>0 && x.category!=='★未分類' && x.category!=='除外').length}</span>`;
       }
       body = `<div class="hint">クリックで表示</div>`;
     }
@@ -823,7 +834,7 @@ function renderEdit(){
     </div>`;
   // 候補＝サイドの施術カテゴリ。現在のカテゴリを先頭＆強調。
   editCats = (CFG.categories||[]).slice();
-  if (it.category && it.category!=='★未分類' && !editCats.includes(it.category)) editCats.unshift(it.category);
+  if (it.category && it.category!=='★未分類' && it.category!=='除外' && !editCats.includes(it.category)) editCats.unshift(it.category);
   document.getElementById('editList').innerHTML =
     renderGroupedList(editCats, it.category, "pickEdit(this.dataset.cat)", it.category)
     + `<button class="exg" onclick="pickEdit('除外')">✕ 除外（集計に入れない）</button>`;

@@ -41,6 +41,7 @@ const CLINIC_LIST = [
 ];
 const TYPES_NEW   = ['通常','CP','媒体'];
 const UNCLASSIFIED = '★未分類';
+const EXCLUDED     = '除外';   // 集計合計には含めないが、確認・修正できるようカテゴリとしては表示する
 
 // 施術カテゴリ（グループ）初期一覧。data/categories.json で編集・追加できる
 const DEFAULT_CATEGORIES = [
@@ -315,7 +316,9 @@ async function fetchClinicMonth(clinic, year, month){
 }
 
 
-/* ====================== 集計コア（検証済み・変更しない） ====================== */
+/* ====================== 集計コア（消化計上：medical-force公式画面と一致） ======================
+   コースは「契約時」ではなく「消化（来店して使った）時」に計上する。単品はそのまま。
+   2025/08・12, 2026/05 で公式画面の売上合計と一致（差は丸めの±5円程度）を確認済み。 */
 function aggregateClinic(values, masterMap, pendingAccum){
   const byCat = {};
   function ensure(c){ if(!byCat[c]){ byCat[c]={count:0,sales:0,通常:0,CP:0,媒体:0}; } }
@@ -325,14 +328,14 @@ function aggregateClinic(values, masterMap, pendingAccum){
       const contract = Number(it.courseContractAmountWithTax)||0;
       const digest   = Number(it.courseDigestionAmountWithTax)||0;
       const genuine  = Number(it.genuinePriceWithTax)||0;
-      if (contract<=0 && digest>0) return;                 // 消化除外
-      let sales = contract>0 ? Math.round(contract) : Math.round(genuine);
+      if (contract>0) return;                              // 消化計上：コース契約は計上しない（消化した時に計上＝公式画面と一致）
+      let sales = digest>0 ? Math.round(digest) : Math.round(genuine);  // 消化があれば消化額、無ければ単品の実額
       if (sales===0) return;
       const opt = String(it.optionId||'').trim();
       let cat, typ;
       if (opt && masterMap[opt]){
         cat = masterMap[opt].category; typ = masterMap[opt].type;
-        if (cat==='除外') return;
+        // 「除外」も byCat に集計する（合計からは getDashboard 等で除外）。確認・修正用に表示するため。
       } else {
         // pendingAccum は振り分けUI用の補助情報（byCatの集計結果には影響しない）
         if (opt && pendingAccum && !pendingAccum[opt]){
@@ -362,14 +365,14 @@ function aggregateItems(values, masterMap){
       const contract = Number(it.courseContractAmountWithTax)||0;
       const digest   = Number(it.courseDigestionAmountWithTax)||0;
       const genuine  = Number(it.genuinePriceWithTax)||0;
-      if (contract<=0 && digest>0) return;
-      let sales = contract>0 ? Math.round(contract) : Math.round(genuine);
+      if (contract>0) return;                              // 消化計上：コース契約は計上しない（消化時に計上）
+      let sales = digest>0 ? Math.round(digest) : Math.round(genuine);
       if (sales===0) return;
       const opt = String(it.optionId||'').trim();
       let cat, typ;
       if (opt && masterMap[opt]){
         cat = masterMap[opt].category; typ = masterMap[opt].type;
-        if (cat==='除外') return;
+        // 「除外」も内訳には含める（確認・修正できるように）
       } else { cat = UNCLASSIFIED; typ = '通常'; }
       if (!TYPES_NEW.includes(typ)) typ='通常';
       const k = opt || ('noopt|' + (it.name||''));
@@ -518,7 +521,7 @@ function getConfig(){
 function sumByCat(byCat){
   const s = {sales:0,count:0,通常:0,CP:0,媒体:0};
   Object.keys(byCat).forEach(cat=>{
-    if (cat===UNCLASSIFIED) return;
+    if (cat===UNCLASSIFIED || cat===EXCLUDED) return;
     s.sales += byCat[cat].sales; s.count += byCat[cat].count;
     s.通常 += byCat[cat]['通常']; s.CP += byCat[cat]['CP']; s.媒体 += byCat[cat]['媒体'];
   });
@@ -538,7 +541,7 @@ async function buildMonthlyTrend(clinicKey, year, month, currentByCat){
     // カテゴリ別の内訳（フロントの月別グラフをカテゴリで絞り込めるように）
     const cats = {};
     if (byCat) Object.keys(byCat).forEach(cat=>{
-      if (cat===UNCLASSIFIED) return;
+      if (cat===UNCLASSIFIED || cat===EXCLUDED) return;
       const c = byCat[cat];
       cats[cat] = { sales:c.sales, count:c.count, 通常:c['通常'], CP:c['CP'], 媒体:c['媒体'] };
     });
@@ -561,17 +564,20 @@ async function getDashboard(clinicKey, year, month, refresh){
     category:cat, sales:byCat[cat].sales, count:byCat[cat].count,
     通常:byCat[cat]['通常'], CP:byCat[cat]['CP'], 媒体:byCat[cat]['媒体'],
   })).sort((a,b)=>{
-    if (a.category===UNCLASSIFIED) return 1;
-    if (b.category===UNCLASSIFIED) return -1;
+    // ★未分類・除外は末尾へ（除外を一番下に）
+    const rk = c => c.category===EXCLUDED ? 2 : c.category===UNCLASSIFIED ? 1 : 0;
+    if (rk(a)!==rk(b)) return rk(a)-rk(b);
     return b.sales - a.sales;
   });
 
+  // 合計は「除外」も含む（除外＝該当カテゴリなしの項目。★未分類と同じく売上には数える）
   const totalSales = categories.reduce((s,c)=>s+c.sales,0);
   const totalCount = categories.reduce((s,c)=>s+c.count,0);
   const cpSales    = categories.reduce((s,c)=>s+c.CP,0);
   const mediaSales = categories.reduce((s,c)=>s+c.媒体,0);
 
-  const ranked = categories.filter(c=>c.category!==UNCLASSIFIED);
+  // ランキングは集計の軸にしない「★未分類・除外」を除く
+  const ranked = categories.filter(c=>c.category!==UNCLASSIFIED && c.category!==EXCLUDED);
   const rankings = {
     sales: ranked.slice().sort((a,b)=>b.sales-a.sales).slice(0,10).map(c=>({label:c.category, value:c.sales})),
     count: ranked.slice().sort((a,b)=>b.count-a.count).slice(0,10).map(c=>({label:c.category, value:c.count})),
@@ -597,7 +603,7 @@ async function getOverview(year, month){
     if (!raw) return { key:c.key, name:c.name, color:c.color, cached:false, totalSales:0, categories:[] };
     const byCat = aggregateClinic(raw, masterMap, null);
     const categories = Object.keys(byCat).map(cat=>({ category:cat, sales:byCat[cat].sales, count:byCat[cat].count }))
-      .sort((a,b)=>{ if(a.category===UNCLASSIFIED)return 1; if(b.category===UNCLASSIFIED)return -1; return b.sales-a.sales; });
+      .sort((a,b)=>{ const rk=x=>x.category===EXCLUDED?2:x.category===UNCLASSIFIED?1:0; if(rk(a)!==rk(b))return rk(a)-rk(b); return b.sales-a.sales; });
     return { key:c.key, name:c.name, color:c.color, cached:true,
       totalSales: categories.reduce((s,x)=>s+x.sales,0), categories };
   }));
@@ -650,7 +656,7 @@ function autoPickCategory(name, apiCat, cats){
 // かんたんなものを自動振り分け（scope: 'month' / 'all'）
 async function autoAssign(clinicKey, year, month, scope){
   const pending = await collectPending(clinicKey, year, month, scope);
-  const cats = Array.from(new Set([ ...readCategories(), ...getKnownCategories() ])).filter(c=>!PARENT_CAT_NAMES.has(c));
+  const cats = Array.from(new Set([ ...readCategories(), ...getKnownCategories() ])).filter(c=>!PARENT_CAT_NAMES.has(c) && c!=='除外' && c!==UNCLASSIFIED);
   const assignments = [];
   Object.values(pending).forEach(p=>{
     const cat = autoPickCategory(p.name, p.apiCat, cats);
@@ -662,7 +668,7 @@ async function autoAssign(clinicKey, year, month, scope){
 
 async function getPending(clinicKey, year, month, scope){
   const pending = await collectPending(clinicKey, year, month, scope);
-  const cats = Array.from(new Set([ ...readCategories(), ...getKnownCategories() ])).filter(c=>!PARENT_CAT_NAMES.has(c));
+  const cats = Array.from(new Set([ ...readCategories(), ...getKnownCategories() ])).filter(c=>!PARENT_CAT_NAMES.has(c) && c!=='除外' && c!==UNCLASSIFIED);
   const rows = Object.keys(pending).map(opt=>{
     const p = pending[opt];
     const r = rankCategories(p.name, p.apiCat, cats);   // 近い順に並べ替え＋おすすめ
