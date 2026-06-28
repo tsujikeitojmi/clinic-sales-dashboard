@@ -546,15 +546,7 @@ function sumByCat(byCat){
 async function buildMonthlyTrend(clinicKey, year, month, currentByCat){
   const masterMap = loadMasterMap();
   const endS = year*12 + (month-1);
-  // 表示範囲：取得済みの最古月 〜 選択月（最大60か月）。最低でも12か月は表示。
-  let startS = endS - 11;
-  try {
-    const cached = await listCachedMonths(clinicKey);
-    if (cached.length){
-      const earliest = Math.min(...cached.map(c=>c.year*12 + (c.month-1)));
-      startS = Math.min(startS, Math.max(earliest, endS - 59));
-    }
-  } catch(e){}
+  const startS = endS - 11;   // 選択月から過去12か月（1年間）
   const serials = [];
   for (let s=startS; s<=endS; s++) serials.push(s);
   // 各月を並列で集計（44か月でも遅くならないように）
