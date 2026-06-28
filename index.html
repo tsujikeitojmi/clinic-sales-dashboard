@@ -610,7 +610,10 @@ function renderChart(){
     }, 0);
   };
   const scope = document.getElementById('chartScope');
-  if (scope) scope.textContent = curCat ? `　${curCat}・過去12か月` : '　選択月から過去12か月';
+  if (scope){
+    const range = m.length ? `${m[0].label}〜${m[m.length-1].label}（${m.length}か月）` : '';
+    scope.textContent = curCat ? `　${curCat}・${range}` : `　${range}`;
+  }
   const ctx = document.getElementById('chart');
   if (chart) chart.destroy();
   chart = new Chart(ctx, {

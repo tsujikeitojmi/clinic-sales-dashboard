@@ -402,7 +402,22 @@ async function readRawFull(clinicKey, year, month){
   return null;
 }
 async function readRaw(clinicKey, year, month){ const j = await readRawFull(clinicKey, year, month); return j ? j.values : null; }
-async function writeRaw(clinicKey, year, month, values){
+// 保存サイズ削減：集計が使う項目だけ残す（会計=v単位は保持。各paymentItemは6項目のみ）。
+// 使う項目: optionId / name / category / courseContractAmountWithTax / courseDigestionAmountWithTax / genuinePriceWithTax
+function slimValues(values){
+  return (values||[]).map(v=>({
+    paymentItems: (v.paymentItems||[]).map(it=>({
+      optionId: it.optionId,
+      name: it.name,
+      category: it.category,
+      courseContractAmountWithTax: it.courseContractAmountWithTax,
+      courseDigestionAmountWithTax: it.courseDigestionAmountWithTax,
+      genuinePriceWithTax: it.genuinePriceWithTax,
+    }))
+  }));
+}
+async function writeRaw(clinicKey, year, month, valuesRaw){
+  const values = slimValues(valuesRaw);   // 軽量化して保存
   const fetchedAt = new Date().toISOString();
   fs.writeFileSync(cacheFile(clinicKey, year, month), JSON.stringify({ fetchedAt, values }), 'utf8');
   sbCacheUpsert(clinicKey, year, month, fetchedAt, values); // Supabaseへも保存（待たない）
@@ -530,10 +545,21 @@ function sumByCat(byCat){
 
 async function buildMonthlyTrend(clinicKey, year, month, currentByCat){
   const masterMap = loadMasterMap();
-  const out = [];
-  for (let i=11;i>=0;i--){   // 選択月から過去12か月
-    const d = new Date(year, month-1-i, 1);
-    const y = d.getFullYear(), m = d.getMonth()+1;
+  const endS = year*12 + (month-1);
+  // 表示範囲：取得済みの最古月 〜 選択月（最大60か月）。最低でも12か月は表示。
+  let startS = endS - 11;
+  try {
+    const cached = await listCachedMonths(clinicKey);
+    if (cached.length){
+      const earliest = Math.min(...cached.map(c=>c.year*12 + (c.month-1)));
+      startS = Math.min(startS, Math.max(earliest, endS - 59));
+    }
+  } catch(e){}
+  const serials = [];
+  for (let s=startS; s<=endS; s++) serials.push(s);
+  // 各月を並列で集計（44か月でも遅くならないように）
+  const out = await Promise.all(serials.map(async s=>{
+    const y = Math.floor(s/12), m = (s%12)+1;
     let byCat;
     if (y===year && m===month) byCat = currentByCat;
     else { const raw = await readRaw(clinicKey, y, m); byCat = raw ? aggregateClinic(raw, masterMap, null) : null; }
@@ -545,13 +571,13 @@ async function buildMonthlyTrend(clinicKey, year, month, currentByCat){
       const c = byCat[cat];
       cats[cat] = { sales:c.sales, count:c.count, 通常:c['通常'], CP:c['CP'], 媒体:c['媒体'] };
     });
-    out.push({
+    return {
       label:`${y}/${('0'+m).slice(-2)}`,
       sales:sum?sum.sales:0, count:sum?sum.count:0,
       通常:sum?sum.通常:0, CP:sum?sum.CP:0, 媒体:sum?sum.媒体:0, hasData:!!byCat,
       cats,
-    });
-  }
+    };
+  }));
   return out;
 }
 
