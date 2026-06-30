@@ -50,12 +50,21 @@ const DEFAULT_CATEGORIES = [
   'BENEV','マックーム','リジュラン','ジュベルック','ボトックスアラガン',
   'エクソソーム','スネコス','デイリースペシャル(マックーム+エクソソーム)',
   'デイリープレミアム(ジュベルック+エクソソーム)','ACRS',
-  'フォトフェイシャル','アクネフォト','脱毛',
+  'フォトフェイシャル','ツヤ肌セット',
+  'アクネフォト','ニキビ撃退セット',
+  '脱毛',
   'ピコレーザー','ピコスポット','ピコトーニング','ピコフラクショナル','ピコダブル',
-  'デンシティ','ハイコックス','スキンボトックス','ジュベリジュ','その他の薬剤',
-  'ボトックス','ヒアルロン酸','肌育注射','ショートスレッド',
-  '脂肪溶解注射','HIFU','ルメッカ','インモード','ダーマペン',
+  'デンシティ',
+  'ハイコックス','スキンボトックス','ジュベリジュ',
+  'ボトックス','ヒアルロン酸',
+  '肌育注射','スネコスパフォルマ','リジュランi','リジュランHB Plus',
+  'プルリアルデンシファイ','ジャルプロスーパーハイドロ','オーロラ注射',
+  'ショートスレッド','ビタミンスレッド','サーモンスレッド','オーダーメイドスレッド',
+  '脂肪溶解注射','HIFU','ルメッカ',
+  'インモード','MiniFX','Forma','Vリフト',
+  'ダーマペン','ヴェルベットスキン','スーパーヴェルベットスキン',
   'ピーリング','マッサージピール','ミラノピール','ララドクター','その他のピーリング',
+  'リバースピール','サリチル酸ピール',
   'ハイドラ','ケアシス',
 ];
 
@@ -70,20 +79,36 @@ const CATEGORY_TREE = [
     ]},
     { name:'S-16' }, { name:'S-25' }, { name:'A1-15' }, { name:'ダイヤモンド' },
   ]},
-  { name:'フォトフェイシャル' }, { name:'アクネフォト' }, { name:'脱毛' },
+  { name:'フォトフェイシャル' },
+  { name:'アクネフォト' },
+  { name:'脱毛' },
   { name:'ピコレーザー', children:[
     { name:'ピコスポット' }, { name:'ピコトーニング' }, { name:'ピコフラクショナル' }, { name:'ピコダブル' },
-  ]}, { name:'デンシティ' },
+  ]},
+  { name:'デンシティ' },
   { name:'ハイコックス', children:[
     { name:'スキンボトックス' }, { name:'リジュラン' }, { name:'ジュベルック' },
-    { name:'スネコス' }, { name:'ジュベリジュ' }, { name:'エクソソーム' },
-    { name:'ACRS' }, { name:'その他の薬剤' },
+    { name:'スネコス' }, { name:'ジュベリジュ' }, { name:'エクソソーム' }, { name:'ACRS' },
   ]},
   { name:'ボトックス' }, { name:'ヒアルロン酸' },
-  { name:'肌育注射' }, { name:'ショートスレッド' }, { name:'脂肪溶解注射' },
-  { name:'HIFU' }, { name:'ルメッカ' }, { name:'インモード' }, { name:'ダーマペン' },
+  { name:'肌育注射', children:[
+    { name:'スネコスパフォルマ' }, { name:'リジュランi' }, { name:'リジュランHB Plus' },
+    { name:'プルリアルデンシファイ' }, { name:'ジャルプロスーパーハイドロ' }, { name:'オーロラ注射' },
+  ]},
+  { name:'ショートスレッド', children:[
+    { name:'ビタミンスレッド' }, { name:'サーモンスレッド' }, { name:'オーダーメイドスレッド' },
+  ]},
+  { name:'脂肪溶解注射' },
+  { name:'HIFU' }, { name:'ルメッカ' },
+  { name:'インモード', children:[
+    { name:'MiniFX' }, { name:'Forma' }, { name:'Vリフト' },
+  ]},
+  { name:'ダーマペン', children:[
+    { name:'ヴェルベットスキン' }, { name:'スーパーヴェルベットスキン' },
+  ]},
   { name:'ピーリング', children:[
     { name:'マッサージピール' }, { name:'ミラノピール' }, { name:'ララドクター' }, { name:'その他のピーリング' },
+    { name:'リバースピール' }, { name:'サリチル酸ピール' },
   ]},
   { name:'ハイドラ' }, { name:'ケアシス' },
 ];
@@ -94,6 +119,8 @@ function collectParentNames(nodes, out=new Set()){
   return out;
 }
 const PARENT_CAT_NAMES = collectParentNames(CATEGORY_TREE);
+// 振り分けUIに表示するのはルート（最上位）カテゴリのみ
+const ROOT_CAT_NAMES = new Set(CATEGORY_TREE.map(n=>n.name));
 
 /* ====================== .env 読み込み（依存なし簡易パーサ） ====================== */
 function loadEnv(){
@@ -151,6 +178,14 @@ async function sbUpsert(table, rows){
     body: JSON.stringify(rows) });
   if (!r.ok) throw new Error('Supabase upsert '+table+' '+r.status+' '+(await r.text()).slice(0,200));
 }
+async function sbDeleteCat(name){
+  if (!SB_ON) return;
+  const r = await fetch(`${SB_URL}/rest/v1/mfdash_categories?name=eq.${encodeURIComponent(name)}`, { method:'DELETE', headers:SB_H });
+  if (!r.ok) throw new Error('Supabase delete cat '+r.status);
+}
+
+// 廃止カテゴリ（サイドバーから除去・Supabaseからも削除）
+const REMOVE_CATS = new Set(['水光注射', 'その他の薬剤']);
 
 // --- Supabase キャッシュ（mfdash_cache テーブル） ---
 async function sbCacheGet(clinicKey, year, month){
@@ -215,6 +250,14 @@ async function loadState(){
     CAT_ARR = localReadCats(); if (!CAT_ARR.length) CAT_ARR = DEFAULT_CATEGORIES.slice();
     const missing = DEFAULT_CATEGORIES.filter(n=>!CAT_ARR.includes(n));
     if (missing.length){ CAT_ARR.push(...missing); localWriteCats(CAT_ARR); }
+  }
+  // 廃止カテゴリをメモリ・ローカル・Supabaseから削除
+  const toRemove = CAT_ARR.filter(n => REMOVE_CATS.has(n));
+  if (toRemove.length){
+    CAT_ARR = CAT_ARR.filter(n => !REMOVE_CATS.has(n));
+    localWriteCats(CAT_ARR);
+    if (SB_ON){ for (const n of toRemove){ try{ await sbDeleteCat(n); }catch(e){ console.error('カテゴリ削除失敗:', n, e.message); } } }
+    console.log('  → 廃止カテゴリを削除:', toRemove.join(', '));
   }
 }
 
@@ -321,7 +364,7 @@ async function fetchClinicMonth(clinic, year, month){
    2025/08・12, 2026/05 で公式画面の売上合計と一致（差は丸めの±5円程度）を確認済み。 */
 function aggregateClinic(values, masterMap, pendingAccum){
   const byCat = {};
-  function ensure(c){ if(!byCat[c]){ byCat[c]={count:0,sales:0,通常:0,CP:0,媒体:0}; } }
+  function ensure(c){ if(!byCat[c]){ byCat[c]={count:0,sales:0,通常:0,CP:0,媒体:0,count_通常:0,count_CP:0,count_媒体:0}; } }
   values.forEach(v=>{
     const counted = new Set();
     (v.paymentItems||[]).forEach(it=>{
@@ -348,7 +391,7 @@ function aggregateClinic(values, masterMap, pendingAccum){
       ensure(cat);
       byCat[cat].sales += sales; byCat[cat][typ] += sales;
       const key = `${cat}|${typ}`;
-      if (!counted.has(key)){ byCat[cat].count++; counted.add(key); }
+      if (!counted.has(key)){ byCat[cat].count++; byCat[cat]['count_'+typ]++; counted.add(key); }
     });
   });
   return byCat;
@@ -446,7 +489,9 @@ const CP_KW    = ['キャンペーン','ゲリラ','フェア','感謝祭','ス�
 const CATEGORY_ALIAS = {
   'ポテンツァ':['ポテンツァ','POTENZA'],
   'フォトフェイシャル':['フォトフェイシャル','フォトフェイス','フォト','IPL','ステラ','M22'],
-  'アクネフォト':['アクネ'],
+  'ツヤ肌セット':['ツヤ肌','ツヤセット'],
+  'アクネフォト':['アクネフォト','アクネ'],
+  'ニキビ撃退セット':['ニキビ撃退','ニキビセット'],
   '脱毛':['脱毛'],
   'ピコレーザー':['ピコレーザー','ピコ'],
   'ピコスポット':['ピコスポット','スポット','シミ取り','シミ'],
@@ -457,14 +502,34 @@ const CATEGORY_ALIAS = {
   'ハイコックス':['ハイコックス','ハイドラコックス','コックス'],
   'ボトックス':['ボトックス','ボツリヌス','ボツ'],
   'ヒアルロン酸':['ヒアルロン'],
-  '肌育注射':['肌育','水光','プロファイロ'],
+  '肌育注射':['肌育','プロファイロ'],
+  'スネコスパフォルマ':['スネコスパフォルマ','パフォルマ'],
+  'リジュランi':['リジュランi','リジュランアイ'],
+  'リジュランHB Plus':['リジュランHB','HBPlus'],
+  'プルリアルデンシファイ':['プルリアル','デンシファイ'],
+  'ジャルプロスーパーハイドロ':['ジャルプロ','スーパーハイドロ'],
+  'オーロラ注射':['オーロラ'],
   'ショートスレッド':['ショートスレッド','スレッド','糸'],
+  'ビタミンスレッド':['ビタミンスレッド','ビタミンスレ'],
+  'サーモンスレッド':['サーモンスレッド','サーモン'],
+  'オーダーメイドスレッド':['オーダーメイドスレッド','オーダーメイドスレ'],
   '脂肪溶解注射':['脂肪溶解','脂肪','BNLS','カベリン','チンセラ'],
   'HIFU':['HIFU','ハイフ','ウルトラフォーマー','ソノクイーン'],
   'ルメッカ':['ルメッカ'],
-  'インモード':['インモード','フォルマ','ファクトラ','モルフェ'],
-  'ダーマペン':['ダーマペン','ヴェルベット'],
+  'インモード':['インモード','ファクトラ','モルフェ'],
+  'MiniFX':['MiniFX','ミニFX'],
+  'Forma':['Forma','フォルマ'],
+  'Vリフト':['Vリフト'],
+  'ダーマペン':['ダーマペン'],
+  'ヴェルベットスキン':['ヴェルベットスキン','ヴェルベット'],
+  'スーパーヴェルベットスキン':['スーパーヴェルベットスキン','スーパーヴェルベット'],
   'ピーリング':['ピーリング','ピール'],
+  'マッサージピール':['マッサージピール','コスメラン','TCA'],
+  'ミラノピール':['ミラノ','ミラノリ'],
+  'ララドクター':['ララドクター'],
+  'その他のピーリング':['ハイドラピール'],
+  'リバースピール':['リバースピール','リバース'],
+  'サリチル酸ピール':['サリチル酸','サリチル'],
   'ハイドラ':['ハイドラフェイシャル','ハイドラ'],
   'ケアシス':['ケアシス'],
   // ポテンツァ サブカテゴリ
@@ -487,7 +552,6 @@ const CATEGORY_ALIAS = {
   // ハイコックス サブカテゴリ
   'スキンボトックス':['スキンボトックス','スキンボト'],
   'ジュベリジュ':['ジュベリジュ'],
-  'その他の薬剤':['その他薬剤'],
   // ピーリング サブカテゴリ
   'マッサージピール':['マッサージピール','コスメラン','TCA'],
   'ミラノピール':['ミラノ','ミラノリ'],
@@ -525,7 +589,7 @@ function getConfig(){
   const today = new Date();
   return {
     clinics: CLINIC_LIST.map(c=>({key:c.key, name:c.name, color:c.color})),
-    categories: readCategories().filter(c=>!PARENT_CAT_NAMES.has(c)),
+    categories: readCategories().filter(c=>ROOT_CAT_NAMES.has(c)),
     categoryTree: CATEGORY_TREE,
     types: TYPES_NEW,
     year:  today.getFullYear(),
@@ -534,11 +598,14 @@ function getConfig(){
 }
 
 function sumByCat(byCat){
-  const s = {sales:0,count:0,通常:0,CP:0,媒体:0};
+  const s = {sales:0,count:0,通常:0,CP:0,媒体:0,count_通常:0,count_CP:0,count_媒体:0};
   Object.keys(byCat).forEach(cat=>{
     if (cat===UNCLASSIFIED || cat===EXCLUDED) return;
     s.sales += byCat[cat].sales; s.count += byCat[cat].count;
     s.通常 += byCat[cat]['通常']; s.CP += byCat[cat]['CP']; s.媒体 += byCat[cat]['媒体'];
+    s.count_通常 += byCat[cat]['count_通常']||0;
+    s.count_CP   += byCat[cat]['count_CP']||0;
+    s.count_媒体 += byCat[cat]['count_媒体']||0;
   });
   return s;
 }
@@ -561,12 +628,15 @@ async function buildMonthlyTrend(clinicKey, year, month, currentByCat){
     if (byCat) Object.keys(byCat).forEach(cat=>{
       if (cat===UNCLASSIFIED || cat===EXCLUDED) return;
       const c = byCat[cat];
-      cats[cat] = { sales:c.sales, count:c.count, 通常:c['通常'], CP:c['CP'], 媒体:c['媒体'] };
+      cats[cat] = { sales:c.sales, count:c.count, 通常:c['通常'], CP:c['CP'], 媒体:c['媒体'],
+        count_通常:c['count_通常']||0, count_CP:c['count_CP']||0, count_媒体:c['count_媒体']||0 };
     });
     return {
       label:`${y}/${('0'+m).slice(-2)}`,
       sales:sum?sum.sales:0, count:sum?sum.count:0,
-      通常:sum?sum.通常:0, CP:sum?sum.CP:0, 媒体:sum?sum.媒体:0, hasData:!!byCat,
+      通常:sum?sum.通常:0, CP:sum?sum.CP:0, 媒体:sum?sum.媒体:0,
+      count_通常:sum?sum.count_通常:0, count_CP:sum?sum.count_CP:0, count_媒体:sum?sum.count_媒体:0,
+      hasData:!!byCat,
       cats,
     };
   }));
@@ -581,6 +651,7 @@ async function getDashboard(clinicKey, year, month, refresh){
   const categories = Object.keys(byCat).map(cat=>({
     category:cat, sales:byCat[cat].sales, count:byCat[cat].count,
     通常:byCat[cat]['通常'], CP:byCat[cat]['CP'], 媒体:byCat[cat]['媒体'],
+    count_通常:byCat[cat]['count_通常']||0, count_CP:byCat[cat]['count_CP']||0, count_媒体:byCat[cat]['count_媒体']||0,
   })).sort((a,b)=>{
     // ★未分類・除外は末尾へ（除外を一番下に）
     const rk = c => c.category===EXCLUDED ? 2 : c.category===UNCLASSIFIED ? 1 : 0;
@@ -674,7 +745,7 @@ function autoPickCategory(name, apiCat, cats){
 // かんたんなものを自動振り分け（scope: 'month' / 'all'）
 async function autoAssign(clinicKey, year, month, scope){
   const pending = await collectPending(clinicKey, year, month, scope);
-  const cats = Array.from(new Set([ ...readCategories(), ...getKnownCategories() ])).filter(c=>!PARENT_CAT_NAMES.has(c) && c!=='除外' && c!==UNCLASSIFIED);
+  const cats = Array.from(ROOT_CAT_NAMES).filter(c=>readCategories().includes(c));
   const assignments = [];
   Object.values(pending).forEach(p=>{
     const cat = autoPickCategory(p.name, p.apiCat, cats);
@@ -686,7 +757,7 @@ async function autoAssign(clinicKey, year, month, scope){
 
 async function getPending(clinicKey, year, month, scope){
   const pending = await collectPending(clinicKey, year, month, scope);
-  const cats = Array.from(new Set([ ...readCategories(), ...getKnownCategories() ])).filter(c=>!PARENT_CAT_NAMES.has(c) && c!=='除外' && c!==UNCLASSIFIED);
+  const cats = Array.from(ROOT_CAT_NAMES).filter(c=>readCategories().includes(c));
   const rows = Object.keys(pending).map(opt=>{
     const p = pending[opt];
     const r = rankCategories(p.name, p.apiCat, cats);   // 近い順に並べ替え＋おすすめ
@@ -727,6 +798,59 @@ async function assignMaster(assignments){
   return { updated: changed.length };
 }
 
+/* ====================== 子カテゴリ振り分け ====================== */
+function getTreeChildrenOf(parentName){
+  function search(nodes){
+    for (const n of nodes){
+      if (n.name===parentName) return (n.children||[]).map(c=>c.name);
+      if (n.children){ const r=search(n.children); if(r) return r; }
+    }
+    return null;
+  }
+  return search(CATEGORY_TREE)||[];
+}
+
+async function getSubPending(clinicKey, year, month, parentCat, scope){
+  const children = getTreeChildrenOf(parentCat);
+  if (!children.length) return {rows:[],children:[],parent:parentCat};
+  const parentItems = MASTER_ROWS.filter(r=>r.category===parentCat);
+  if (!parentItems.length) return {rows:[],children,parent:parentCat};
+  const optIds = new Set(parentItems.map(r=>String(r.optionId)));
+  const salesByOpt = {};
+  function accum(values){
+    values.forEach(v=>{
+      const counted=new Set();
+      (v.paymentItems||[]).forEach(it=>{
+        const contract=Number(it.courseContractAmountWithTax)||0;
+        const digest=Number(it.courseDigestionAmountWithTax)||0;
+        const genuine=Number(it.genuinePriceWithTax)||0;
+        if(contract>0) return;
+        const sales=digest>0?Math.round(digest):Math.round(genuine);
+        if(sales===0) return;
+        const opt=String(it.optionId||'').trim();
+        if(!optIds.has(opt)) return;
+        if(!salesByOpt[opt]) salesByOpt[opt]={count:0,sales:0};
+        salesByOpt[opt].sales+=sales;
+        if(!counted.has(opt)){salesByOpt[opt].count++;counted.add(opt);}
+      });
+    });
+  }
+  if(scope==='all'){
+    const months=await listCachedMonths(clinicKey);
+    for(const{year:y,month:m}of months){const raw=await readRaw(clinicKey,y,m);if(raw)accum(raw);}
+  } else {
+    const{values}=await getValues(clinicKey,year,month,false);
+    accum(values);
+  }
+  const rows=parentItems.map(r=>({
+    optionId:r.optionId,name:r.name,apiCat:r.apiCat,
+    category:r.category,type:r.type,
+    count:(salesByOpt[r.optionId]||{}).count||0,
+    sales:(salesByOpt[r.optionId]||{}).sales||0,
+  })).sort((a,b)=>b.sales-a.sales);
+  return{rows,children,parent:parentCat};
+}
+
 /* ====================== HTTP サーバ ====================== */
 function send(res, code, body, type){
   res.writeHead(code, {'Content-Type': type || 'application/json; charset=utf-8'});
@@ -758,6 +882,11 @@ const server = http.createServer(async (req, res) => {
     }
     if (u.pathname==='/api/pending'){
       const d = await getPending(q.clinic, +q.year, +q.month, q.scope);
+      return send(res, 200, d);
+    }
+    if (u.pathname==='/api/sub-pending'){
+      if (!q.parent) return send(res,400,{error:'parent required'});
+      const d = await getSubPending(q.clinic, +q.year||new Date().getFullYear(), +q.month||(new Date().getMonth()+1), q.parent, q.scope||'all');
       return send(res, 200, d);
     }
     if (req.method==='POST' && u.pathname==='/api/assign'){

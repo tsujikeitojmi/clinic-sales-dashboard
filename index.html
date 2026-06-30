@@ -165,6 +165,33 @@
     .tree-dot::before{content:"";position:absolute;left:4px;top:50%;width:4px;height:4px;border-radius:50%;
       background:#d8cfc9;transform:translateY(-50%)}
     /* カテゴリツリー：親＝矢印マーカー / 子＝点マーカー＋インデント（文字の太さ・大きさ・金額色は親子で揃える） */
+    .subcat-bar{display:none;flex-direction:column;gap:6px;margin-bottom:14px}
+    .subcat-row{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+    .subcat-row .lbl{font-size:12px;color:var(--sub);font-weight:600;margin-right:2px;white-space:nowrap}
+    .subcat-chip{all:unset;cursor:pointer;font-size:12px;padding:5px 14px;border-radius:20px;
+      border:1px solid var(--line);background:var(--panel);color:var(--txt);transition:background .12s,border-color .12s}
+    .subcat-chip:hover{background:var(--accent-tint);border-color:#efd9dd;color:var(--accent-d)}
+    .subcat-chip.on{background:var(--accent);border-color:var(--accent);color:#fff;font-weight:600}
+    /* 月別サマリーテーブル */
+    .sum-tbl-wrap{overflow-x:auto}
+    .sum-tbl{width:100%;border-collapse:collapse;font-size:13px}
+    .sum-tbl th,.sum-tbl td{text-align:right;padding:8px 10px;border-bottom:1px solid var(--hair);font-variant-numeric:tabular-nums;white-space:nowrap}
+    .sum-tbl th:first-child,.sum-tbl td:first-child{text-align:left}
+    .sum-tbl th{color:var(--sub);font-weight:600;font-size:11px}
+    .sum-tbl tbody tr:hover{background:var(--panel2)}
+    .sum-tbl tbody tr.no-data{opacity:.35}
+    .sum-tbl .col-n{color:var(--normal)}
+    .sum-tbl .col-cp{color:var(--cp)}
+    .sum-tbl .col-m{color:var(--media)}
+    .sum-tbl th.col-n{color:var(--normal)}
+    .sum-tbl th.col-cp{color:var(--cp)}
+    .sum-tbl th.col-m{color:var(--media)}
+    .sum-tbl tfoot td{font-weight:700;border-top:2px solid var(--line);border-bottom:none}
+    .copy-btn{all:unset;cursor:pointer;font-size:12px;padding:6px 14px;border-radius:20px;
+      border:1px solid var(--line);background:var(--panel);color:var(--sub);transition:background .12s}
+    .copy-btn:hover{background:var(--accent-tint);border-color:#efd9dd;color:var(--accent-d)}
+    .copy-btn.copied{background:var(--accent2-tint);border-color:#d8e7e1;color:#4f7d70}
+
     .loading{position:fixed;inset:0;display:none;align-items:center;justify-content:center;
       background:rgba(247,245,244,.72);backdrop-filter:blur(1px);z-index:60;font-size:14px;color:var(--txt)}
     .loading.on{display:flex}
@@ -197,6 +224,7 @@
       <button class="ghost" onclick="fetchAllPast()" title="この院の過去12か月のうち未取得の月をまとめて取得">📥 過去分を取得</button>
     </div>
 
+    <div class="subcat-bar" id="subcatBar"></div>
     <div class="cards" id="cards"></div>
 
     <!-- 月別グラフは全幅（過去12か月） -->
@@ -206,6 +234,14 @@
       <div class="muted" style="font-size:11px;margin-top:8px">
         ※ 過去月はキャッシュ(data/cache)にある月のみ表示。各月を一度ダッシュボード表示すると蓄積されます。
       </div>
+    </div>
+
+    <div class="panel">
+      <div style="display:flex;align-items:center;gap:12px;margin-bottom:12px">
+        <h3 style="margin:0">月別サマリー</h3>
+        <button class="copy-btn" id="copyBtn" onclick="copyMonthlyTable()">コピー</button>
+      </div>
+      <div class="sum-tbl-wrap"><div id="monthlyTableDiv"></div></div>
     </div>
 
     <div class="grid2">
@@ -263,6 +299,28 @@
   </div>
 </div>
 
+<!-- ===== 子カテゴリ振り分け ===== -->
+<div class="modal" id="subPendingModal">
+  <div class="box card-box">
+    <div class="hd">
+      <h3 id="subPendingTitle">子カテゴリに振り分け</h3>
+      <span class="muted" id="subPendingProgress"></span>
+      <button class="x" onclick="closeSubPending()">✕</button>
+    </div>
+    <div class="sub muted" id="subPendingSub"></div>
+    <div class="bd">
+      <div class="item-card" id="subItemCard"></div>
+      <div class="q muted">どのカテゴリ？</div>
+      <div class="group-list" id="subGroupList"></div>
+    </div>
+    <div class="ft">
+      <span class="muted" id="subPendingMsg" style="margin-right:auto"></span>
+      <button class="ghost" onclick="skipSubItem()">スキップ</button>
+      <button class="ghost" onclick="closeSubPending()">閉じる</button>
+    </div>
+  </div>
+</div>
+
 <!-- ===== 施術ごとの振り分け編集 ===== -->
 <div class="modal" id="editModal">
   <div class="box card-box">
@@ -291,6 +349,8 @@ let DATA = null;
 let OVERVIEW = null;      // 全院のサイドバー用（キャッシュ済みの院だけ値あり）
 let curClinic = null;
 let curCat = null;        // 選択中カテゴリ（null=全体）
+let curSubCat = null;     // 選択中サブカテゴリ（null=親全体）
+let curSubCat2 = null;    // 選択中孫カテゴリ（例：CP-25の薬剤）
 let rankKey = 'sales';
 let chart = null;
 let PENDING = null;
@@ -358,7 +418,7 @@ async function reload(refresh){
     if (refresh) params.refresh = 1;
     DATA = await api('/api/dashboard', params);
     OVERVIEW = await api('/api/overview', {year:y, month:m});
-    render(); hideLoad();
+    render(); hideLoad(); toggleDetailPanels();
     runAutoAssignBg(); // バックグラウンドで自動振り分け（待たない）
   } catch(e){ onErr(e); }
 }
@@ -370,11 +430,13 @@ function render(){
   updateFreshness();
   renderCards();
   buildAccordion();
+  renderSubCatChips();
   renderChart();
   renderRank();
   renderCatTable();
   renderItems();
   updateCatBadge();
+  toggleDetailPanels();
 }
 
 /* この院の過去12か月をまとめて取得（キャッシュ済みは即スキップ・未取得だけAPI） */
@@ -529,7 +591,15 @@ function buildAccordion(){
       const treeNames = new Set(Object.keys(TREE_MAP));
       const rows = [`<div class="row ${curCat===null?'on':''}" onclick="selectCat(null)">
           <span class="nm">▣ 全体</span><span class="vl">${yen(DATA.summary.totalSales)}</span></div>`];
-      rows.push(renderCatNodes(CFG.categoryTree||[], map, 0));
+      // 親カテゴリのみサイドバーに表示（子はダッシュボード上部チップで選択）
+      (CFG.categoryTree||[]).forEach(node=>{
+        const nm = node.name;
+        const sales = getTreeSales(nm, map);
+        const sel = curCat===nm;
+        rows.push(`<div class="row ${sales===0?'zero':''} ${sel?'on':''}"
+          data-cat="${esc(nm)}" onclick="selectCat(this.dataset.cat)">
+          <span class="nm">${esc(nm)}</span><span class="vl">${yen(sales)}</span></div>`);
+      });
       // ツリーに含まれないカテゴリ（除: ★未分類）を末尾に追加
       cats.filter(x=>!treeNames.has(x.category)&&x.category!=='★未分類').forEach(x=>{
         rows.push(`<div class="row ${x.sales===0?'zero':''} ${curCat===x.category?'on':''}"
@@ -565,21 +635,86 @@ function buildAccordion(){
 }
 
 function selectCat(cat){
+  curSubCat = null;
+  curSubCat2 = null;
   curCat = (cat===curCat) ? null : cat;
-  if (curCat && TREE_MAP[curCat] && TREE_MAP[curCat].children.length>0) expandedTreeCats.add(curCat);
-  buildAccordion(); renderCards2(); renderChart(); renderItems(); updateCatBadge();
+  buildAccordion(); renderSubCatChips(); renderCards2(); renderChart(); renderMonthlyTable(); renderItems(); updateCatBadge(); toggleDetailPanels();
 }
+
+function effectiveCat(){ return curSubCat2 || curSubCat || curCat; }
 
 function updateCatBadge(){
   const b = document.getElementById('catBadge');
-  if (curCat){ b.style.display=''; b.textContent='絞り込み: '+curCat; }
+  const ec = effectiveCat();
+  if (ec){ b.style.display=''; b.textContent='絞り込み: '+ec; }
   else b.style.display='none';
+}
+
+function renderSubCatChips(){
+  const el = document.getElementById('subcatBar');
+  if (!curCat){ el.style.display='none'; el.innerHTML=''; return; }
+  const node = TREE_MAP[curCat];
+  if (!node || !node.children || !node.children.length){ el.style.display='none'; el.innerHTML=''; return; }
+
+  let html = '';
+  // 1段目：親カテゴリの直接の子
+  const chips1 = [`<button class="subcat-chip ${!curSubCat?'on':''}" onclick="selectSubCat(null)">すべて</button>`];
+  node.children.forEach(c=>{
+    chips1.push(`<button class="subcat-chip ${curSubCat===c.name?'on':''}" onclick="selectSubCat('${esc(c.name)}')">${esc(c.name)}</button>`);
+  });
+  html += `<div class="subcat-row"><span class="lbl">${esc(curCat)}：</span>${chips1.join('')}</div>`;
+
+  // 2段目：選択中サブカテゴリに子がある場合（例：CP-25→薬剤一覧）
+  if (curSubCat){
+    const sub = TREE_MAP[curSubCat];
+    if (sub && sub.children && sub.children.length){
+      const chips2 = [`<button class="subcat-chip ${!curSubCat2?'on':''}" onclick="selectSubCat2(null)">すべて</button>`];
+      sub.children.forEach(c=>{
+        chips2.push(`<button class="subcat-chip ${curSubCat2===c.name?'on':''}" onclick="selectSubCat2('${esc(c.name)}')">${esc(c.name)}</button>`);
+      });
+      html += `<div class="subcat-row"><span class="lbl">${esc(curSubCat)}：</span>${chips2.join('')}</div>`;
+    }
+  }
+
+  // 子カテゴリ振り分けボタン
+  const subBtnHtml = (parentName)=>{
+    const cnt = DATA && DATA.items ? DATA.items.filter(x=>x.category===parentName).length : 0;
+    return `<button class="subcat-chip" style="background:var(--accent-tint);border-color:#efd9dd;color:var(--accent-d);font-weight:600"
+      onclick="openSubPending('${esc(parentName)}')">${esc(parentName)}の子カテゴリ振り分け${cnt?` (${cnt}件)`:''}…</button>`;
+  };
+  html += `<div class="subcat-row" style="margin-top:4px">${subBtnHtml(curCat)}</div>`;
+  // curSubCat にも子がある場合（例: CP-25→薬剤）は2段目にもボタンを追加
+  if (curSubCat){
+    const sub2 = TREE_MAP[curSubCat];
+    if (sub2 && sub2.children && sub2.children.length){
+      html += `<div class="subcat-row">${subBtnHtml(curSubCat)}</div>`;
+    }
+  }
+
+  el.style.display='flex';
+  el.innerHTML = html;
+}
+
+function selectSubCat(cat){
+  curSubCat = (cat===curSubCat) ? null : cat;
+  curSubCat2 = null;
+  renderSubCatChips(); renderCards2(); renderChart(); renderMonthlyTable(); renderItems(); updateCatBadge();
+}
+
+function selectSubCat2(cat){
+  curSubCat2 = (cat===curSubCat2) ? null : cat;
+  renderSubCatChips(); renderCards2(); renderChart(); renderMonthlyTable(); renderItems(); updateCatBadge();
+}
+
+function toggleDetailPanels(){
+  document.querySelector('.grid2').style.display = curCat ? 'none' : '';
 }
 
 /* カテゴリ選択時はカード値をそのカテゴリ（子孫含む）で上書き */
 function renderCards2(){
-  if (!curCat){ renderCards(); return; }
-  const filterSet = new Set(getCatAndDescendants(curCat));
+  const ec = effectiveCat();
+  if (!ec){ renderCards(); return; }
+  const filterSet = new Set(getCatAndDescendants(ec));
   const matched = DATA.categories.filter(x=>filterSet.has(x.category));
   // 0件カテゴリ（DATAに出てこない）はそのまま 0 を表示する（累計にフォールバックしない）
   const sales = matched.reduce((s,c)=>s+c.sales,0);
@@ -587,8 +722,8 @@ function renderCards2(){
   const CP    = matched.reduce((s,c)=>s+(c.CP||0),0);
   const media = matched.reduce((s,c)=>s+(c.媒体||0),0);
   const cards = [
-    {k:`${curCat} 売上`, v:yen(sales)},
-    {k:`${curCat} 件数`, v:num(count)+' 件'},
+    {k:`${ec} 売上`, v:yen(sales)},
+    {k:`${ec} 件数`, v:num(count)+' 件'},
     {k:'平均単価', v:yen(count?Math.round(sales/count):0)},
     {k:'CP・媒体', v:yen(CP+media), s:`CP ${yen(CP)} / 媒体 ${yen(media)}`, accent:true},
   ];
@@ -603,16 +738,17 @@ function renderChart(){
   const m = DATA.monthly;
   const labels = m.map(x=>x.label);
   // カテゴリ絞り込み中はその月のカテゴリ別内訳を、未選択(全体)なら月の合計を使う
+  const ec = effectiveCat();
   const pick = (x, f)=>{
-    if (!curCat) return x[f] || 0;
-    return getCatAndDescendants(curCat).reduce((s,n)=>{
+    if (!ec) return x[f] || 0;
+    return getCatAndDescendants(ec).reduce((s,n)=>{
       const c = x.cats && x.cats[n]; return s + (c ? (c[f]||0) : 0);
     }, 0);
   };
   const scope = document.getElementById('chartScope');
   if (scope){
     const range = m.length ? `${m[0].label}〜${m[m.length-1].label}（${m.length}か月）` : '';
-    scope.textContent = curCat ? `　${curCat}・${range}` : `　${range}`;
+    scope.textContent = ec ? `　${ec}・${range}` : `　${range}`;
   }
   const ctx = document.getElementById('chart');
   if (chart) chart.destroy();
@@ -640,6 +776,82 @@ function renderChart(){
         y1:{position:'right', ticks:{color:'#7fa99b'}, grid:{drawOnChartArea:false}}
       }
     }
+  });
+}
+
+/* ====== 月別サマリーテーブル ====== */
+let monthlyTableData = [];
+
+function renderMonthlyTable(){
+  const m = DATA.monthly;
+  const ec = effectiveCat();
+  const pick = (x, f)=>{
+    if (!ec) return x[f] || 0;
+    return getCatAndDescendants(ec).reduce((s,n)=>{
+      const c = x.cats && x.cats[n]; return s + (c ? (c[f]||0) : 0);
+    }, 0);
+  };
+  monthlyTableData = m.map(x=>({
+    label:     x.label,
+    hasData:   x.hasData,
+    count:     pick(x,'count'),
+    sales:     pick(x,'通常') + pick(x,'CP') + pick(x,'媒体'),
+    n_cnt:     pick(x,'count_通常'),
+    n_sales:   pick(x,'通常'),
+    cp_cnt:    pick(x,'count_CP'),
+    cp_sales:  pick(x,'CP'),
+    m_cnt:     pick(x,'count_媒体'),
+    m_sales:   pick(x,'媒体'),
+  }));
+  const tot = monthlyTableData.reduce((s,r)=>({
+    count:s.count+r.count, sales:s.sales+r.sales,
+    n_cnt:s.n_cnt+r.n_cnt, n_sales:s.n_sales+r.n_sales,
+    cp_cnt:s.cp_cnt+r.cp_cnt, cp_sales:s.cp_sales+r.cp_sales,
+    m_cnt:s.m_cnt+r.m_cnt, m_sales:s.m_sales+r.m_sales,
+  }), {count:0,sales:0,n_cnt:0,n_sales:0,cp_cnt:0,cp_sales:0,m_cnt:0,m_sales:0});
+
+  const rows = monthlyTableData.map(r=>`
+    <tr class="${r.hasData?'':'no-data'}">
+      <td>${r.label}</td>
+      <td>${r.hasData ? num(r.count)+' 件' : '—'}</td>
+      <td>${r.hasData ? yen(r.sales) : '—'}</td>
+      <td class="col-n">${r.hasData ? num(r.n_cnt)+' 件' : '—'}</td>
+      <td class="col-n">${r.hasData ? yen(r.n_sales) : '—'}</td>
+      <td class="col-cp">${r.hasData ? num(r.cp_cnt)+' 件' : '—'}</td>
+      <td class="col-cp">${r.hasData ? yen(r.cp_sales) : '—'}</td>
+      <td class="col-m">${r.hasData ? num(r.m_cnt)+' 件' : '—'}</td>
+      <td class="col-m">${r.hasData ? yen(r.m_sales) : '—'}</td>
+    </tr>`).join('');
+
+  document.getElementById('monthlyTableDiv').innerHTML = `
+    <table class="sum-tbl">
+      <thead><tr>
+        <th>月</th>
+        <th>総件数</th><th>総金額</th>
+        <th class="col-n">通常件数</th><th class="col-n">通常金額</th>
+        <th class="col-cp">CP件数</th><th class="col-cp">CP金額</th>
+        <th class="col-m">媒体件数</th><th class="col-m">媒体金額</th>
+      </tr></thead>
+      <tbody>${rows}</tbody>
+      <tfoot><tr>
+        <td>合計</td>
+        <td>${num(tot.count)} 件</td><td>${yen(tot.sales)}</td>
+        <td class="col-n">${num(tot.n_cnt)} 件</td><td class="col-n">${yen(tot.n_sales)}</td>
+        <td class="col-cp">${num(tot.cp_cnt)} 件</td><td class="col-cp">${yen(tot.cp_sales)}</td>
+        <td class="col-m">${num(tot.m_cnt)} 件</td><td class="col-m">${yen(tot.m_sales)}</td>
+      </tr></tfoot>
+    </table>`;
+}
+
+function copyMonthlyTable(){
+  const header = ['月','総件数','総金額','通常件数','通常金額','CP件数','CP金額','媒体件数','媒体金額'].join('\t');
+  const rows = monthlyTableData.filter(r=>r.hasData).map(r=>[
+    r.label, r.count, r.sales, r.n_cnt, r.n_sales, r.cp_cnt, r.cp_sales, r.m_cnt, r.m_sales,
+  ].join('\t'));
+  navigator.clipboard.writeText([header,...rows].join('\n')).then(()=>{
+    const btn = document.getElementById('copyBtn');
+    btn.textContent='コピー済み'; btn.classList.add('copied');
+    setTimeout(()=>{ btn.textContent='コピー'; btn.classList.remove('copied'); }, 2000);
   });
 }
 
@@ -676,10 +888,11 @@ function renderCatTable(){
 /* ====== 施術内訳（マスタ振り分けの中身：optionId単位） ====== */
 function renderItems(){
   const all = (DATA.items || []);
+  const ec = effectiveCat();
   let items;
-  if (!curCat){ items = all; }
-  else { const fs=new Set(getCatAndDescendants(curCat)); items=all.filter(x=>fs.has(x.category)); }
-  document.getElementById('itemsTitle').textContent = `施術内訳（${curCat || '全カテゴリ'}）`;
+  if (!ec){ items = all; }
+  else { const fs=new Set(getCatAndDescendants(ec)); items=all.filter(x=>fs.has(x.category)); }
+  document.getElementById('itemsTitle').textContent = `施術内訳（${ec || '全カテゴリ'}）`;
   const totS = items.reduce((s,x)=>s+x.sales,0), totC = items.reduce((s,x)=>s+x.count,0);
   document.getElementById('itemsHint').textContent =
     `${items.length}施術 ・ 合計 ${yen(totS)} / ${num(totC)}件` +
@@ -853,6 +1066,86 @@ async function pickEdit(cat){
     closeEdit(); reload();
   } catch(e){ onErr(e); }
 }
+
+/* ====== 子カテゴリ振り分け ====== */
+let SUB_PENDING = null;
+let subIdx = 0;
+let subAssignedCount = 0;
+let subPendingScope = 'all';
+
+let subPendingParent = null;
+
+async function openSubPending(parentCat, scope){
+  if (!parentCat) parentCat = curCat;
+  if (!parentCat) return;
+  subPendingParent = parentCat;
+  if (scope) subPendingScope = scope;
+  const modal = document.getElementById('subPendingModal');
+  modal.classList.add('on');
+  document.getElementById('subPendingMsg').textContent = '';
+  document.getElementById('subItemCard').innerHTML = '<div class="muted">読込中…</div>';
+  document.getElementById('subGroupList').innerHTML = '';
+  document.getElementById('subPendingTitle').textContent = `${parentCat}　子カテゴリに振り分け`;
+  const toggle = ['all','month'].map(s=>
+    `<button class="${s===subPendingScope?'on':''}" onclick="openSubPending('${esc(parentCat)}','${s}')">${s==='all'?'全期間':'この月だけ'}</button>`).join('');
+  document.getElementById('subPendingSub').innerHTML = `<span class="scope-toggle">${toggle}</span>`;
+  const y=+document.getElementById('yearSel').value, m=+document.getElementById('monthSel').value;
+  try {
+    SUB_PENDING = await api(`/api/sub-pending?clinic=${curClinic}&year=${y}&month=${m}&parent=${encodeURIComponent(parentCat)}&scope=${subPendingScope}`);
+    subIdx = 0; subAssignedCount = 0;
+    renderSubCard();
+  } catch(e){
+    document.getElementById('subItemCard').innerHTML = `<div class="muted">取得失敗: ${esc(e.message||e)}</div>`;
+  }
+}
+
+function closeSubPending(){
+  document.getElementById('subPendingModal').classList.remove('on');
+  if (subAssignedCount > 0) reload();
+}
+
+function renderSubCard(){
+  const rows = SUB_PENDING.rows;
+  const children = SUB_PENDING.children;
+  const card = document.getElementById('subItemCard');
+  const list = document.getElementById('subGroupList');
+  document.getElementById('subPendingProgress').textContent = `${Math.min(subIdx+1, rows.length)} / ${rows.length}件`;
+
+  if (subIdx >= rows.length){
+    card.innerHTML = `<div class="nm">完了しました 🎉</div>
+      <div class="amt" style="margin-top:8px">「${esc(SUB_PENDING.parent)}」の振り分けが終わりました。${subAssignedCount?`（${subAssignedCount}件）`:''}`;
+    list.innerHTML = `<button class="done" onclick="closeSubPending()">閉じて再集計</button>`;
+    return;
+  }
+
+  const r = rows[subIdx];
+  card.innerHTML = `
+    <div class="nm">${esc(r.name)||'<span class="muted">(名称なし)</span>'}</div>
+    <div class="meta">
+      <span class="amt">${yen(r.sales)} ／ ${num(r.count)}件${r.apiCat?` ・ APIカテゴリ:${esc(r.apiCat)}`:''}</span>
+    </div>`;
+
+  list.innerHTML = children.map(c=>`
+    <button data-cat="${esc(c)}" onclick="pickSubGroup(this.dataset.cat)">
+      <span class="gname">${esc(c)}</span>
+    </button>`).join('')
+    + `<button data-cat="${esc(SUB_PENDING.parent)}" onclick="pickSubGroup(this.dataset.cat)" style="opacity:.5">
+        <span class="gname">「${esc(SUB_PENDING.parent)}」のまま（変更なし）</span>
+      </button>`;
+}
+
+async function pickSubGroup(cat){
+  const r = SUB_PENDING.rows[subIdx];
+  document.getElementById('subPendingMsg').textContent = '保存中…';
+  try {
+    await apiPost('/api/assign', {assignments:[{optionId:r.optionId, name:r.name, apiCat:r.apiCat, category:cat, type:r.type||'通常'}]});
+    subAssignedCount++;
+    document.getElementById('subPendingMsg').textContent = `「${cat}」に振り分け（計${subAssignedCount}件）`;
+    subIdx++; renderSubCard();
+  } catch(e){ onErr(e); }
+}
+
+function skipSubItem(){ subIdx++; document.getElementById('subPendingMsg').textContent='スキップ'; renderSubCard(); }
 
 /* ====== util ====== */
 function esc(s){ return String(s==null?'':s).replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m])); }
