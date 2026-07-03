@@ -1495,7 +1495,7 @@ function skipSubItem(){ subIdx++; document.getElementById('subPendingMsg').textC
 function esc(s){ return String(s==null?'':s).replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m])); }
 // 画面表示用のカテゴリ名：内部は「〇〇（ハイコックス）」で区別しつつ、表示は「（ハイコックス）」を隠す
 // （親の階層で分かるため）。データ/保存/集計は必ず生のカテゴリ名を使う。
-function displayCat(c){ return String(c==null?'':c).replace(/（ハイコックス）$/,''); }
+function displayCat(c){ return String(c==null?'':c).replace(/（[^（）]*）$/,''); }
 function showLoad(msg){ document.getElementById('loadingMsg').textContent=msg||'読込中…'; document.getElementById('loading').classList.add('on'); }
 function hideLoad(){ document.getElementById('loading').classList.remove('on'); }
 function onErr(e){ hideLoad(); alert('エラー: '+(e && e.message ? e.message : e)); console.error(e); }
