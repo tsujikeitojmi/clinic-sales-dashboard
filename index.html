@@ -1094,20 +1094,18 @@ async function runAutoAssignBg(){
   } catch(e){ /* サイレント */ }
 }
 
-async function openPending(scope){
-  if (scope) pendingScope = scope;
+async function openPending(){
+  pendingScope = 'all';
   const modal = document.getElementById('pendingModal');
   modal.classList.add('on');
   document.getElementById('pendingMsg').textContent='';
   document.getElementById('itemCard').innerHTML='<div class="muted">読込中…</div>';
   document.getElementById('groupList').innerHTML='';
   const y=+document.getElementById('yearSel').value, m=+document.getElementById('monthSel').value;
-  const toggle = ['all','month'].map(s=>
-    `<button class="${s===pendingScope?'on':''}" onclick="openPending('${s}')">${s==='all'?'全期間（取得済み全月）':'この月だけ'}</button>`).join('');
   document.getElementById('pendingSub').innerHTML =
-    `<span class="scope-toggle">${toggle}</span>　${DATA?esc(DATA.clinic):''} ・ 金額の大きい順`;
+    `${DATA?esc(DATA.clinic):''} ・ 全期間（取得済み全月）・ 金額の大きい順`;
   try {
-    const body = {clinic:curClinic, year:y, month:m, scope:pendingScope};
+    const body = {clinic:curClinic, year:y, month:m, scope:'all'};
     // バックグラウンドで未処理のものだけ追加実行（大半は既に完了しているので即返る）
     const auto = await apiPost('/api/auto-assign', body);
     autoAssigned = (auto.assigned || 0) + bgAutoAssigned;
@@ -1425,19 +1423,17 @@ async function openSubPending(parentCat, scope){
   if (!parentCat) parentCat = curCat;
   if (!parentCat) return;
   subPendingParent = parentCat;
-  if (scope) subPendingScope = scope;
+  subPendingScope = 'all';
   const modal = document.getElementById('subPendingModal');
   modal.classList.add('on');
   document.getElementById('subPendingMsg').textContent = '';
   document.getElementById('subItemCard').innerHTML = '<div class="muted">読込中…</div>';
   document.getElementById('subGroupList').innerHTML = '';
   document.getElementById('subPendingTitle').textContent = `${parentCat}　子カテゴリに振り分け`;
-  const toggle = ['all','month'].map(s=>
-    `<button class="${s===subPendingScope?'on':''}" onclick="openSubPending('${esc(parentCat)}','${s}')">${s==='all'?'全期間':'この月だけ'}</button>`).join('');
-  document.getElementById('subPendingSub').innerHTML = `<span class="scope-toggle">${toggle}</span>`;
+  document.getElementById('subPendingSub').innerHTML = `全期間（取得済み全月）`;
   const y=+document.getElementById('yearSel').value, m=+document.getElementById('monthSel').value;
   try {
-    SUB_PENDING = await api(`/api/sub-pending?clinic=${curClinic}&year=${y}&month=${m}&parent=${encodeURIComponent(parentCat)}&scope=${subPendingScope}`);
+    SUB_PENDING = await api(`/api/sub-pending?clinic=${curClinic}&year=${y}&month=${m}&parent=${encodeURIComponent(parentCat)}&scope=all`);
     subIdx = 0; subAssignedCount = 0;
     renderSubCard();
   } catch(e){
