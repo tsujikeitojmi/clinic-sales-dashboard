@@ -56,6 +56,7 @@ const DEFAULT_CATEGORIES = [
   'ピコレーザー','ピコスポット','ピコトーニング','ピコフラクショナル','ピコダブル',
   'デンシティ',
   'ハイコックス','スキンボトックス','ジュベリジュ',
+  'リジュラン（ハイコックス）','ジュベルック（ハイコックス）','スネコス（ハイコックス）','エクソソーム（ハイコックス）','ACRS（ハイコックス）',
   'ボトックス','ヒアルロン酸',
   '肌育注射','スネコスパフォルマ','リジュランi','リジュランHB Plus',
   'プルリアルデンシファイ','ジャルプロスーパーハイドロ','オーロラ注射',
@@ -88,8 +89,8 @@ const CATEGORY_TREE = [
   ]},
   { name:'デンシティ' },
   { name:'ハイコックス', children:[
-    { name:'スキンボトックス' }, { name:'リジュラン' }, { name:'ジュベルック' },
-    { name:'スネコス' }, { name:'ジュベリジュ' }, { name:'エクソソーム' }, { name:'ACRS' },
+    { name:'スキンボトックス' }, { name:'リジュラン（ハイコックス）' }, { name:'ジュベルック（ハイコックス）' },
+    { name:'スネコス（ハイコックス）' }, { name:'ジュベリジュ' }, { name:'エクソソーム（ハイコックス）' }, { name:'ACRS（ハイコックス）' },
   ]},
   { name:'ボトックス' }, { name:'ヒアルロン酸' },
   { name:'肌育注射', children:[
@@ -582,7 +583,7 @@ const CATEGORY_ALIAS = {
   'ビタミンスレッド':['ビタミンスレッド','ビタミンスレ'],
   'サーモンスレッド':['サーモンスレッド','サーモン'],
   'オーダーメイドスレッド':['オーダーメイドスレッド','オーダーメイドスレ'],
-  '脂肪溶解注射':['脂肪溶解','脂肪','BNLS','カベリン','チンセラ'],
+  '脂肪溶解注射':['脂肪溶解','脂肪','BNLS','カベリン','チンセラ','FatX','fatX','Fat X','fat X','FATX'],
   'HIFU':['HIFU','ハイフ','ウルトラフォーマー','ソノクイーン'],
   'ルメッカ':['ルメッカ'],
   'インモード':['インモード','ファクトラ','モルフェ'],
@@ -622,6 +623,11 @@ const CATEGORY_ALIAS = {
   // ハイコックス サブカテゴリ
   'スキンボトックス':['スキンボトックス','スキンボト'],
   'ジュベリジュ':['ジュベリジュ'],
+  'ジュベルック（ハイコックス）':['ジュベルック'],
+  'リジュラン（ハイコックス）':['リジュラン'],
+  'スネコス（ハイコックス）':['スネコス'],
+  'エクソソーム（ハイコックス）':['エクソソーム','エクソ'],
+  'ACRS（ハイコックス）':['ACRS'],
   // ピーリング サブカテゴリ
   'マッサージピール':['マッサージピール','コスメラン','TCA'],
   'ミラノピール':['ミラノ','ミラノリ'],
@@ -629,6 +635,33 @@ const CATEGORY_ALIAS = {
   'その他のピーリング':['ハイドラピール'],
 };
 function aliasesOf(cat){ return CATEGORY_ALIAS[cat] || [cat]; }
+
+/* ツリー各ノードの親・深さ（おすすめパス推定用）。CATEGORY_TREE から構築。 */
+function buildNodeInfo(nodes, par, out){
+  (nodes||[]).forEach(n=>{
+    out[n.name] = { parent: par||null, depth: par ? out[par].depth+1 : 0, hasChildren: !!(n.children&&n.children.length) };
+    if (n.children) buildNodeInfo(n.children, n.name, out);
+  });
+  return out;
+}
+const NODE_INFO = buildNodeInfo(CATEGORY_TREE, null, {});
+const ALL_NODES = Object.keys(NODE_INFO);
+// このノード名の別名が施術名に含まれれば、一番長い一致の文字数（具体的なほど高い）
+function ownScore(text, name){ let s=0; for (const kw of aliasesOf(name)){ if (kw && text.indexOf(kw)>=0) s=Math.max(s,kw.length); } return s; }
+// ルート→葉の「おすすめパス」。自ノード＋先祖の一致を合算し、親の言葉も当たるパスを優先（例:ハイコックス系）。
+function suggestBestPath(name, apiCat){
+  const text = String(name||'') + ' ' + String(apiCat||'');
+  let best=null, bestScore=0, bestDepth=-1;
+  ALL_NODES.forEach(n=>{
+    if (ownScore(text, n) <= 0) return;                 // 自分自身が当たらないノードは選ばない
+    let sc=0, cur=n; while(cur){ sc+=ownScore(text,cur); cur=NODE_INFO[cur].parent; }  // 先祖ぶん加点
+    const d = NODE_INFO[n].depth;
+    if (sc>bestScore || (sc===bestScore && d>bestDepth)){ best=n; bestScore=sc; bestDepth=d; }  // 同点は深い方＝具体的
+  });
+  if (!best) return [];
+  const path=[]; let cur=best; while(cur){ path.unshift(cur); cur=NODE_INFO[cur].parent; }
+  return path;
+}
 
 function suggestType(text){
   const t = String(text||'');
@@ -835,15 +868,45 @@ async function getPending(clinicKey, year, month, scope){
   const cats = Array.from(ROOT_CAT_NAMES).filter(c=>readCategories().includes(c));
   const rows = Object.keys(pending).map(opt=>{
     const p = pending[opt];
-    const r = rankCategories(p.name, p.apiCat, cats);   // 近い順に並べ替え＋おすすめ
+    const r = rankCategories(p.name, p.apiCat, cats);   // ルートを近い順に並べ替え
+    const path = suggestBestPath(p.name, p.apiCat);     // ルート→葉のおすすめパス（子のおすすめ用）
     return { optionId:p.optionId, name:p.name, apiCat:p.apiCat, count:p.count, sales:p.sales,
       categoriesRanked: r.ordered,
-      suggestCategory:  r.best,
+      suggestCategory:  path.length ? path[0] : r.best, // 親カードのおすすめ（パスの根っこ優先）
+      suggestPath: path,                                // ["ハイコックス","ジュベルック（ハイコックス）"] 等
       suggestType: suggestType(p.name + ' ' + p.apiCat) };
   }).sort((a,b)=> b.sales - a.sales);   // 金額の大きい順（影響の大きいものから振り分け）
   const monthsScanned = scope==='all' ? (await listCachedMonths(clinicKey)).length : 1;
   return { rows, knownCategories: cats, types: TYPES_NEW,
     scope: scope||'month', monthsScanned };
+}
+
+/* 施術マスタ管理ページ用：この院のキャッシュ全月に出てくる全施術(optionId)を集め、
+   現在の振り分け（カテゴリ・種別）を付けて返す。未分類も含む。金額は出さない（軽量）。 */
+async function getMasterList(clinicKey){
+  const masterMap = loadMasterMap();
+  const byOpt = {};
+  const months = await listCachedMonths(clinicKey);
+  for (const {year:y, month:m} of months){
+    const raw = await readRaw(clinicKey, y, m);
+    if (!raw) continue;
+    raw.forEach(v=>(v.paymentItems||[]).forEach(it=>{
+      const opt = String(it.optionId||'').trim();
+      if (!opt || byOpt[opt]) return;
+      byOpt[opt] = { optionId:opt, name:it.name||'', apiCat:it.category||'' };
+    }));
+  }
+  const rows = Object.values(byOpt).map(o=>{
+    const m = masterMap[o.optionId];
+    const path = suggestBestPath(o.name, o.apiCat);
+    return { optionId:o.optionId, name:o.name, apiCat:o.apiCat,
+      category: m ? m.category : UNCLASSIFIED,
+      type:     m ? m.type : suggestType(o.name+' '+o.apiCat),
+      suggestPath: path,
+      suggestCategory: path.length ? path[path.length-1] : '' };   // おすすめ（葉まで）
+  }).sort((a,b)=> String(a.name).localeCompare(String(b.name),'ja'));
+  return { clinic: getClinic(clinicKey).name, clinicKey, rows,
+    categoryTree: CATEGORY_TREE, types: TYPES_NEW, monthsScanned: months.length };
 }
 
 async function assignMaster(assignments){
@@ -959,6 +1022,9 @@ const server = http.createServer(async (req, res) => {
       const d = await getPending(q.clinic, +q.year, +q.month, q.scope);
       return send(res, 200, d);
     }
+    if (u.pathname==='/api/master'){   // 施術マスタ管理ページ用（この院の全施術＋現在の振り分け）
+      return send(res, 200, await getMasterList(q.clinic));
+    }
     if (u.pathname==='/api/sub-pending'){
       if (!q.parent) return send(res,400,{error:'parent required'});
       const d = await getSubPending(q.clinic, +q.year||new Date().getFullYear(), +q.month||(new Date().getMonth()+1), q.parent, q.scope||'all');
@@ -1006,9 +1072,36 @@ async function migrateCacheToSb(){
   } catch(e){ console.error('キャッシュ移行失敗:', e.message); }
 }
 
+// ハイコックスの薬剤（ジュベルック等）がポテンツァ側の同名カテゴリに入っていた分を、
+// ハイコックス専用カテゴリ「〇〇（ハイコックス）」へ付け替える。名前に「コックス」を含むものだけ対象。
+// 一度実行すれば名前が変わるので再実行しても二重処理にならない（冪等）。
+async function migrateHicox(){
+  const SHARED = ['リジュラン','ジュベルック','スネコス','エクソソーム','ACRS'];
+  const changed = [], newCats = [];
+  MASTER_ROWS.forEach(r=>{
+    const cat = String(r.category||'').trim();
+    if (SHARED.includes(cat) && String(r.name||'').includes('コックス')){
+      r.category = cat + '（ハイコックス）';
+      changed.push(r);
+      if (!CAT_ARR.includes(r.category) && !newCats.includes(r.category)) newCats.push(r.category);
+    }
+  });
+  if (!changed.length) return;
+  if (newCats.length) CAT_ARR.push(...newCats);
+  if (SB_ON){
+    try {
+      await sbUpsert('mfdash_master', changed.map(toSbMaster));
+      if (newCats.length) await sbUpsert('mfdash_categories', newCats.map((n,i)=>({ name:n, sort:CAT_ARR.length+i })));
+    } catch(e){ console.error('ハイコックス付け替え SB書込失敗:', e.message); }
+  }
+  localWriteMaster(MASTER_ROWS); if (newCats.length) localWriteCats(CAT_ARR);
+  console.log('  → ハイコックス薬剤の付け替え:', changed.length, '件');
+}
+
 (async () => {
   try { await loadState(); }
   catch(e){ console.error('保存データの読込に失敗（ローカルにフォールバック）:', e.message); MASTER_ROWS = localReadMaster(); CAT_ARR = localReadCats(); if(!CAT_ARR.length) CAT_ARR = DEFAULT_CATEGORIES.slice(); }
+  try { await migrateHicox(); } catch(e){ console.error('ハイコックス付け替え失敗:', e.message); }
   if (SB_ON) migrateCacheToSb().catch(e=>console.error('キャッシュ移行失敗:', e.message));
   server.listen(PORT, () => {
     const ok = CLINIC_LIST.filter(c=>process.env[c.key+'_CLIENT_ID']).map(c=>c.name);

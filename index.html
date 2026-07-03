@@ -97,6 +97,58 @@
     .tabsmini{display:flex;gap:6px;margin-bottom:12px}
     .tabsmini button{all:unset;cursor:pointer;font-size:12px;color:var(--sub);padding:5px 11px;border-radius:20px}
     .tabsmini button.on{background:var(--accent-tint);color:var(--accent-d);font-weight:600}
+    .drill-hd{width:100%;font-size:12px;color:var(--sub);margin:2px 0 8px;display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+    .drill-hd b{color:var(--accent-d)}
+    .drill-hd .back{all:unset;cursor:pointer;color:var(--accent-d);font-weight:600;background:var(--accent-tint);padding:3px 10px;border-radius:20px;font-size:11px}
+    .drill-hd .back:hover{filter:brightness(.97)}
+    /* 施術マスタ */
+    .master-btn{all:unset;flex:0 0 auto;cursor:pointer;text-align:center;padding:10px;border-radius:12px;background:var(--panel2);border:1px solid var(--line);color:var(--txt);font-weight:600;font-size:13px;margin-top:8px}
+    .master-btn:hover{background:var(--accent-tint);border-color:#efd9dd;color:var(--accent-d)}
+    /* 施術マスタ：独立ページ（モーダルでなく全画面ページ） */
+    .fullpage{position:fixed;inset:0;background:var(--bg);z-index:45;display:none;overflow:auto}
+    .fullpage.on{display:block}
+    .fullpage-inner{max-width:1240px;margin:0 auto;background:var(--panel);min-height:100vh;box-shadow:var(--sh);display:flex;flex-direction:column;height:100vh}
+    .fullpage .hd{display:flex;align-items:center;gap:12px;padding:12px 20px;border-bottom:1px solid var(--line);background:var(--panel);flex:0 0 auto}
+    .fullpage .hd select{padding:6px 10px;border-radius:9px;border:1px solid var(--line);font-size:13px}
+    /* 2ペイン：左ナビ＋右一覧 */
+    .master-layout{display:flex;flex:1;min-height:0}
+    .master-nav{width:250px;flex:0 0 250px;border-right:1px solid var(--line);display:flex;flex-direction:column;padding:12px;gap:10px;min-height:0;background:var(--panel2)}
+    .master-nav #masterSearch{border:1px solid var(--line);border-radius:10px;padding:8px 12px;font-size:13px;background:var(--panel)}
+    .mnav-list{overflow:auto;display:flex;flex-direction:column;gap:2px;min-height:0}
+    .mnav-hd{font-size:10px;color:var(--sub);text-transform:uppercase;letter-spacing:.06em;margin:8px 4px 2px;font-weight:700}
+    .mnav-item{cursor:pointer;padding:8px 11px;border-radius:9px;display:flex;align-items:center;gap:8px;font-size:13px}
+    .mnav-item:hover{background:var(--panel)}
+    .mnav-item.on{background:var(--accent-tint);color:var(--accent-d);font-weight:700}
+    .mnav-item .cnt{margin-left:auto;color:var(--sub);font-size:11px;background:var(--panel);border:1px solid var(--line);border-radius:20px;padding:0 8px;line-height:18px}
+    .mnav-item.unc{color:var(--accent);font-weight:700}
+    .mnav-item.unc.on{background:var(--accent);color:#fff}
+    .mnav-item.unc .cnt{background:var(--accent-tint);border-color:#efd9dd}
+    .master-main{flex:1;display:flex;flex-direction:column;min-width:0}
+    .master-main-hd{padding:12px 18px;border-bottom:1px solid var(--hair);display:flex;align-items:center;gap:12px;flex-wrap:wrap;flex:0 0 auto}
+    .master-main-hd h4{margin:0;font-size:15px}
+    .master-main-hd select{padding:5px 9px;border-radius:8px;border:1px solid var(--line);font-size:12px}
+    .master-main-body{flex:1;overflow:auto;padding:6px 14px 30px;min-height:0}
+    .master-tools{display:flex;align-items:center;gap:10px;padding:10px 20px;border-bottom:1px solid var(--hair);flex-wrap:wrap}
+    .master-tools #masterSearch{flex:1;min-width:160px;border:1px solid var(--line);border-radius:10px;padding:7px 12px;font-size:13px}
+    .master-tools .unc-toggle{font-size:12px;color:var(--sub);display:flex;align-items:center;gap:5px;cursor:pointer}
+    #masterBody{padding:12px 18px}
+    .msec{border:1px solid var(--line);border-radius:12px;margin-bottom:10px;overflow:hidden}
+    .msec>.mhd{cursor:pointer;padding:10px 14px;background:var(--panel2);display:flex;align-items:center;gap:10px;font-weight:700}
+    .msec>.mhd .cnt{color:var(--sub);font-weight:500;font-size:12px}
+    .msec>.mhd .arw{margin-left:auto;color:var(--sub);font-size:11px;transition:transform .15s}
+    .msec.open>.mhd .arw{transform:rotate(90deg)}
+    .msec>.mbody{display:none;padding:2px 8px 6px}
+    .msec.open>.mbody{display:block}
+    .mchild-hd{font-size:11px;color:var(--sub);padding:8px 6px 3px;font-weight:700}
+    .mrow{display:flex;align-items:center;gap:10px;padding:7px 8px;border-bottom:1px solid var(--hair)}
+    .mrow:hover{background:var(--panel2)}
+    .mrow .mname{flex:1;font-size:13px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+    .mrow .mcat{cursor:pointer;font-size:12px;color:var(--accent-d);background:var(--accent-tint);border:1px solid #efd9dd;border-radius:8px;padding:3px 9px;white-space:nowrap}
+    .mrow .mcat:hover{filter:brightness(.98)}
+    .mrow .mtype{display:inline-flex;gap:3px;background:var(--panel2);border:1px solid var(--line);border-radius:20px;padding:2px;flex:0 0 auto}
+    .mrow .mtype button{all:unset;cursor:pointer;font-size:11px;padding:2px 9px;border-radius:20px;color:var(--sub)}
+    .mrow .mtype button.on{background:var(--accent);color:#fff;font-weight:600}
+    .mrow.unc .mname{color:var(--accent)}
 
     table{width:100%;border-collapse:collapse}
     th,td{text-align:right;padding:9px 10px;border-bottom:1px solid var(--hair);font-variant-numeric:tabular-nums;white-space:nowrap}
@@ -210,6 +262,7 @@
     <button class="pending-btn" id="pendingBtn" onclick="openPending()">
       未分類を振り分け <b id="pendingCount">–</b>
     </button>
+    <button class="master-btn" id="masterBtn" onclick="openMaster()">🗂 施術マスタを編集</button>
   </aside>
 
   <!-- ===== メイン ===== -->
@@ -355,6 +408,41 @@
   </div>
 </div>
 
+<!-- ===== 施術マスタ 管理ページ（独立ページ #master） ===== -->
+<div class="fullpage" id="masterModal">
+  <div class="fullpage-inner">
+    <div class="hd">
+      <button class="ghost" onclick="closeMaster()">← 戻る</button>
+      <h3 style="margin:0">🗂 施術マスタ</h3>
+      <select id="masterClinicSel" onchange="switchMasterClinic(this.value)"></select>
+      <span class="muted" id="masterClinicName" style="font-size:12px"></span>
+    </div>
+    <div class="master-layout">
+      <aside class="master-nav">
+        <input id="masterSearch" type="text" placeholder="🔍 施術名で検索" oninput="masterSearchDebounced()">
+        <div class="mnav-list" id="masterNavList"></div>
+      </aside>
+      <section class="master-main">
+        <div class="master-main-hd" id="masterMainHd"></div>
+        <div class="master-main-body" id="masterBody"><div class="muted" style="padding:20px">読込中…</div></div>
+      </section>
+    </div>
+  </div>
+</div>
+
+<!-- カテゴリ選択（ドリルダウン）サブモーダル -->
+<div class="modal" id="catPickModal">
+  <div class="box card-box">
+    <div class="hd"><h3 id="catPickTitle">カテゴリを選択</h3><button class="x" onclick="closeCatPick()">✕</button></div>
+    <div class="bd">
+      <div class="item-card" id="catPickCard"></div>
+      <div class="q muted">どのカテゴリに？</div>
+      <div class="group-list" id="catPickList"></div>
+    </div>
+    <div class="ft"><span class="muted" id="catPickMsg" style="margin-right:auto"></span><button class="ghost" onclick="closeCatPick()">閉じる</button></div>
+  </div>
+</div>
+
 <div class="loading" id="loading"><div class="spin"></div><span id="loadingMsg">集計中…</span></div>
 
 <script>
@@ -399,6 +487,7 @@ window.addEventListener('load', async () => {
     curClinic = CFG.clinics[0].key;
     buildPeriodSelectors();
     reload();
+    if (location.hash==='#master') openMaster();   // URLが #master なら施術マスタページを開く
   } catch(e){ onErr(e); }
 });
 
@@ -566,7 +655,7 @@ function makeCatBtn(c, extraClass, suggestCat, onclickExpr){
   const bread = getCatBreadcrumb(c);
   const isSuggest = c === suggestCat;
   return `<button class="${extraClass||''}" data-cat="${esc(c)}" onclick="${onclickExpr}">
-    <span class="gname">${esc(c)}</span>
+    <span class="gname">${esc(displayCat(c))}</span>
     ${bread?`<span class="gbread">${esc(bread)}</span>`:''}
     ${isSuggest?'<span class="sg">おすすめ</span>':''}
   </button>`;
@@ -670,7 +759,7 @@ function buildAccordion(){
       cats.filter(x=>!treeNames.has(x.category)&&x.category!=='★未分類').forEach(x=>{
         rows.push(`<div class="row ${x.sales===0?'zero':''} ${curCat===x.category?'on':''}"
             data-cat="${esc(x.category)}" onclick="selectCat(this.dataset.cat)">
-            <span class="nm">${esc(x.category)}</span><span class="vl">${yen(x.sales)}</span></div>`);
+            <span class="nm">${esc(displayCat(x.category))}</span><span class="vl">${yen(x.sales)}</span></div>`);
       });
       if (map['★未分類']) rows.push(`<div class="row unc ${curCat==='★未分類'?'on':''}"
           data-cat="★未分類" onclick="selectCat(this.dataset.cat)">
@@ -712,7 +801,7 @@ function effectiveCat(){ return curSubCat2 || curSubCat || curCat; }
 function updateCatBadge(){
   const b = document.getElementById('catBadge');
   const ec = effectiveCat();
-  if (ec){ b.style.display=''; b.textContent='絞り込み: '+ec; }
+  if (ec){ b.style.display=''; b.textContent='絞り込み: '+displayCat(ec); }
   else b.style.display='none';
 }
 
@@ -726,9 +815,9 @@ function renderSubCatChips(){
   // 1段目：親カテゴリの直接の子
   const chips1 = [`<button class="subcat-chip ${!curSubCat?'on':''}" onclick="selectSubCat(null)">すべて</button>`];
   node.children.forEach(c=>{
-    chips1.push(`<button class="subcat-chip ${curSubCat===c.name?'on':''}" onclick="selectSubCat('${esc(c.name)}')">${esc(c.name)}</button>`);
+    chips1.push(`<button class="subcat-chip ${curSubCat===c.name?'on':''}" onclick="selectSubCat('${esc(c.name)}')">${esc(displayCat(c.name))}</button>`);
   });
-  html += `<div class="subcat-row"><span class="lbl">${esc(curCat)}：</span>${chips1.join('')}</div>`;
+  html += `<div class="subcat-row"><span class="lbl">${esc(displayCat(curCat))}：</span>${chips1.join('')}</div>`;
 
   // 2段目：選択中サブカテゴリに子がある場合（例：CP-25→薬剤一覧）
   if (curSubCat){
@@ -736,9 +825,9 @@ function renderSubCatChips(){
     if (sub && sub.children && sub.children.length){
       const chips2 = [`<button class="subcat-chip ${!curSubCat2?'on':''}" onclick="selectSubCat2(null)">すべて</button>`];
       sub.children.forEach(c=>{
-        chips2.push(`<button class="subcat-chip ${curSubCat2===c.name?'on':''}" onclick="selectSubCat2('${esc(c.name)}')">${esc(c.name)}</button>`);
+        chips2.push(`<button class="subcat-chip ${curSubCat2===c.name?'on':''}" onclick="selectSubCat2('${esc(c.name)}')">${esc(displayCat(c.name))}</button>`);
       });
-      html += `<div class="subcat-row"><span class="lbl">${esc(curSubCat)}：</span>${chips2.join('')}</div>`;
+      html += `<div class="subcat-row"><span class="lbl">${esc(displayCat(curSubCat))}：</span>${chips2.join('')}</div>`;
     }
   }
 
@@ -790,8 +879,8 @@ function renderCards2(){
   const CP    = matched.reduce((s,c)=>s+(c.CP||0),0);
   const media = matched.reduce((s,c)=>s+(c.媒体||0),0);
   const cards = [
-    {k:`${ec} 売上`, v:yen(sales)},
-    {k:`${ec} 件数`, v:num(count)+' 件'},
+    {k:`${displayCat(ec)} 売上`, v:yen(sales)},
+    {k:`${displayCat(ec)} 件数`, v:num(count)+' 件'},
     {k:'平均単価', v:yen(count?Math.round(sales/count):0)},
     ec==='物販'
       ? {k:'種別区分', v:'—', s:'通常 / CP / 媒体の区別なし'}
@@ -818,7 +907,7 @@ function renderChart(){
   const scope = document.getElementById('chartScope');
   if (scope){
     const range = m.length ? `${m[0].label}〜${m[m.length-1].label}（${m.length}か月）` : '';
-    scope.textContent = ec ? `　${ec}・${range}` : `　${range}`;
+    scope.textContent = ec ? `　${displayCat(ec)}・${range}` : `　${range}`;
   }
   const ctx = document.getElementById('chart');
   if (chart) chart.destroy();
@@ -943,7 +1032,7 @@ function renderRank(){
   document.getElementById('rank').innerHTML = list.map((x,i)=>`
     <div class="it">
       <span class="no">${i+1}</span>
-      <span class="nm">${esc(x.label)}</span>
+      <span class="nm">${esc(displayCat(x.label))}</span>
       <span class="bar" style="width:${Math.max(3,(x.value/max)*120)}px;
         background:${i===0?'#b76e79':'#d6a7af'}"></span>
       <span class="vl">${fmt(x.value)}</span>
@@ -955,7 +1044,7 @@ function renderCatTable(){
   const tb = document.querySelector('#catTable tbody');
   tb.innerHTML = DATA.categories.map(c=>`
     <tr class="${c.category==='★未分類'?'unc':''}">
-      <td>${esc(c.category)}</td><td>${yen(c.sales)}</td><td>${num(c.count)}</td>
+      <td>${esc(displayCat(c.category))}</td><td>${yen(c.sales)}</td><td>${num(c.count)}</td>
       <td>${yen(c.通常)}</td><td>${yen(c.CP)}</td><td>${yen(c.媒体)}</td>
     </tr>`).join('');
 }
@@ -967,7 +1056,7 @@ function renderItems(){
   let items;
   if (!ec){ items = all; }
   else { const fs=new Set(getCatAndDescendants(ec)); items=all.filter(x=>fs.has(x.category)); }
-  document.getElementById('itemsTitle').textContent = `施術内訳（${ec || '全カテゴリ'}）`;
+  document.getElementById('itemsTitle').textContent = `施術内訳（${ec ? displayCat(ec) : '全カテゴリ'}）`;
   const totS = items.reduce((s,x)=>s+x.sales,0), totC = items.reduce((s,x)=>s+x.count,0);
   document.getElementById('itemsHint').textContent =
     `${items.length}施術 ・ 合計 ${yen(totS)} / 延べ${num(totC)}人` +
@@ -978,7 +1067,7 @@ function renderItems(){
     <tr class="${x.category==='★未分類'?'unc':''}">
       <td>${esc(x.name)||'<span class="muted">(名称なし)</span>'}</td>
       <td class="muted" style="text-align:left">${esc(x.apiCat)||'<span style="opacity:.5">—</span>'}</td>
-      <td style="text-align:left"><span class="pill">${esc(x.category)}</span></td>
+      <td style="text-align:left"><span class="pill">${esc(displayCat(x.category))}</span></td>
       <td class="muted" style="text-align:left">${esc(x.type)}</td>
       <td>${num(x.count)}</td>
       <td>${yen(x.sales)}</td>
@@ -1072,14 +1161,38 @@ function renderCard(){
       </span>
     </div>`;
 
-  // グループ候補＝サイドの施術カテゴリ。近い順に並べ替え済み（先頭が「おすすめ」）。
+  // グループ候補＝サイドの施術カテゴリ（ルート）。近い順に並べ替え済み（先頭が「おすすめ」）。
   curCats = (r.categoriesRanked && r.categoriesRanked.length) ? r.categoriesRanked.slice() : knownCats.slice();
-
-  list.innerHTML =
-    renderGroupedList(curCats, r.suggestCategory, "pickGroup(this.dataset.cat)", null)
-    + `<button class="exg" onclick="pickGroup('除外')">✕ 除外（集計に入れない）</button>`;
+  drillParent = null;              // 新しいカードは親選択から
+  renderPendingChoices();
 }
 let curCats = [];
+let drillParent = null;            // カード内でドリルダウン中の親（null=親選択中）
+
+// 振り分けカードの選択肢（親を選ぶ → その子カテゴリをその場に表示するドリルダウン）
+function renderPendingChoices(){
+  const list = document.getElementById('groupList');
+  const r = PENDING.rows[curIdx];
+  if (!drillParent){
+    // 親（ルート）選択
+    list.innerHTML =
+      renderGroupedList(curCats, r.suggestCategory, "pickGroup(this.dataset.cat)", null)
+      + `<button class="exg" onclick="assignCat('除外')">✕ 除外（集計に入れない）</button>`;
+  } else {
+    // 子選択（drillParent の子カテゴリ）。おすすめの子を最上＋バッジ。パンくずで「ハイコックス › …」等が分かる
+    const sp = (PENDING.rows[curIdx].suggestPath) || [];
+    const i = sp.indexOf(drillParent);
+    const suggestChild = (i>=0 && i+1<sp.length) ? sp[i+1] : null;
+    let kids = ((TREE_MAP[drillParent]||{}).children||[]).map(c=>c.name);
+    if (suggestChild) kids = [suggestChild, ...kids.filter(k=>k!==suggestChild)];   // おすすめを先頭に
+    const bread = getCatBreadcrumb(drillParent);
+    let html = `<div class="drill-hd">${bread?esc(bread)+' › ':''}<b>${esc(drillParent)}</b> の中から選択　<button class="back" onclick="drillBack()">← 戻る</button></div>`;
+    html += `<button class="reco" data-cat="${esc(drillParent)}" onclick="assignCat(this.dataset.cat)"><span class="gname">${esc(drillParent)}（このまま）</span></button>`;
+    kids.forEach(c=>{ html += makeCatBtn(c, c===suggestChild?'reco':'', suggestChild, "pickGroup(this.dataset.cat)"); });
+    list.innerHTML = html;
+  }
+}
+function drillBack(){ drillParent = (TREE_MAP[drillParent]||{}).parent || null; renderPendingChoices(); }
 
 function setType(t){
   curType = t;
@@ -1087,6 +1200,13 @@ function setType(t){
 }
 
 async function pickGroup(cat){
+  // 子カテゴリを持つ親を選んだら、まず子を表示（この時点では保存しない）
+  if (cat!=='除外' && TREE_MAP[cat] && (TREE_MAP[cat].children||[]).length){
+    drillParent = cat; renderPendingChoices(); return;
+  }
+  assignCat(cat);
+}
+async function assignCat(cat){
   const r = PENDING.rows[curIdx];
   document.getElementById('pendingMsg').textContent='保存中…';
   try {
@@ -1094,11 +1214,164 @@ async function pickGroup(cat){
     assignedCount++;
     if (cat!=='除外' && !knownCats.includes(cat)) knownCats.push(cat);
     document.getElementById('pendingMsg').textContent=`「${cat}」に振り分け（計${assignedCount}件）`;
-    curIdx++; renderCard();
+    drillParent = null; curIdx++; renderCard();
   } catch(e){ onErr(e); }
 }
 
 function skipItem(){ curIdx++; document.getElementById('pendingMsg').textContent='スキップ'; renderCard(); }
+
+/* ====== 施術マスタ 管理ページ ====== */
+const UNC = '★未分類';
+let MASTER = null;
+let masterCollapsed = {};   // root -> 開いているか（未指定は既定）
+let masterDirty = false;    // マスタを変更したら閉じる時に再集計
+let catPickOpt = null, catPickDrill = null;   // カテゴリ選択サブモーダルの状態
+let _msTimer = null;
+
+async function openMaster(){
+  if (!curClinic){ alert('先に院を選んでください'); return; }
+  document.getElementById('masterModal').classList.add('on');
+  if (location.hash!=='#master') history.replaceState(null,'','#master');   // URLを独立ページに
+  window.scrollTo(0,0);
+  // 院セレクタ（マスタ画面内で院を切替できる）
+  const csel = document.getElementById('masterClinicSel');
+  csel.innerHTML = (CFG.clinics||[]).map(c=>`<option value="${c.key}" ${c.key===curClinic?'selected':''}>${esc(c.name)}</option>`).join('');
+  document.getElementById('masterBody').innerHTML = '<div class="muted">読込中…（この院の全施術を集計）</div>';
+  document.getElementById('masterClinicName').textContent = '';
+  try {
+    MASTER = await api('/api/master', {clinic:curClinic});
+    document.getElementById('masterClinicName').textContent = `${esc(MASTER.clinic)}（${MASTER.rows.length}施術・${MASTER.monthsScanned}か月分）`;
+    masterSelRoot = null; masterTypeF = '';
+    document.getElementById('masterSearch').value = '';
+    renderMaster();
+  } catch(e){ document.getElementById('masterBody').innerHTML = `<div class="muted">取得失敗: ${esc(e.message||e)}</div>`; }
+}
+function closeMaster(){
+  document.getElementById('masterModal').classList.remove('on');
+  if (location.hash==='#master') history.replaceState(null,'',location.pathname+location.search);
+  masterDirty=false; reload();   // ダッシュボードを現在の院・変更内容で再集計
+}
+function switchMasterClinic(key){ if (key && key!==curClinic){ curClinic=key; openMaster(); } }
+function masterSearchDebounced(){ clearTimeout(_msTimer); _msTimer=setTimeout(renderMaster,180); }
+function masterRootOf(cat){ return (cat===UNC || cat==='除外') ? cat : getRootCat(cat); }
+
+let masterSelRoot = null;   // 左ナビで選択中のカテゴリ（親）
+let masterTypeF = '';       // 種別フィルタ
+
+function masterFilteredRows(){
+  const q = (document.getElementById('masterSearch').value||'').trim();
+  let rows = MASTER.rows;
+  if (q) rows = rows.filter(r => (r.name||'').indexOf(q)>=0 || (r.apiCat||'').indexOf(q)>=0);
+  return rows;
+}
+function renderMaster(){
+  if (!MASTER) return;
+  const rows = masterFilteredRows();
+  const byRoot = {};
+  rows.forEach(r=>{ const root=masterRootOf(r.category); (byRoot[root]=byRoot[root]||[]).push(r); });
+  const treeRoots = (CFG.categoryTree||[]).map(n=>n.name);
+  const order = [UNC, ...treeRoots, '除外'];
+  const roots = [];
+  order.forEach(x=>{ if (byRoot[x]) roots.push(x); });
+  Object.keys(byRoot).forEach(x=>{ if (!roots.includes(x)) roots.push(x); });
+  if (!masterSelRoot || !byRoot[masterSelRoot]) masterSelRoot = (byRoot[UNC]&&byRoot[UNC].length)?UNC : (roots[0]||null);
+  renderMasterNav(roots, byRoot);
+  renderMasterMain(byRoot[masterSelRoot]||[]);
+}
+function renderMasterNav(roots, byRoot){
+  const item=(key,label,cls)=>`<div class="mnav-item ${cls||''} ${key===masterSelRoot?'on':''}" data-root="${esc(key)}" onclick="selectMasterRoot(this.dataset.root)"><span>${esc(label)}</span><span class="cnt">${(byRoot[key]||[]).length}</span></div>`;
+  let html='';
+  if (byRoot[UNC]) html += `<div class="mnav-hd">要対応</div>` + item(UNC,'★未分類','unc');
+  html += `<div class="mnav-hd">カテゴリ</div>`;
+  roots.filter(r=>r!==UNC && r!=='除外').forEach(r=> html += item(r,r));
+  if (byRoot['除外']) html += `<div class="mnav-hd">その他</div>` + item('除外','除外');
+  document.getElementById('masterNavList').innerHTML = html;
+}
+function selectMasterRoot(root){ masterSelRoot=root; renderMaster(); document.getElementById('masterBody').scrollTop=0; }
+function renderMasterMain(list){
+  const hd = document.getElementById('masterMainHd');
+  const body = document.getElementById('masterBody');
+  const shown = masterTypeF ? list.filter(r=>(r.type||'通常')===masterTypeF) : list;
+  const tsel = ['','通常','CP','媒体'].map(t=>`<option value="${t}" ${t===masterTypeF?'selected':''}>${t?('種別: '+t):'種別: 全部'}</option>`).join('');
+  hd.innerHTML = `<h4>${esc(masterSelRoot||'')}</h4><span class="muted">${shown.length}件</span>
+    <div style="margin-left:auto"><select onchange="masterSetTypeF(this.value)">${tsel}</select></div>`;
+  if (!shown.length){ body.innerHTML='<div class="muted" style="padding:20px">該当なし</div>'; return; }
+  const byCat={}, catList=[];
+  shown.forEach(r=>{ if(!byCat[r.category]){byCat[r.category]=[];catList.push(r.category);} byCat[r.category].push(r); });
+  catList.sort((a,b)=> a===masterSelRoot?-1 : b===masterSelRoot?1 : String(a).localeCompare(String(b),'ja'));
+  body.innerHTML = catList.map(cat=>{
+    const sub = (cat!==masterSelRoot && cat!==UNC) ? `<div class="mchild-hd">${esc(displayCat(cat))}（${byCat[cat].length}）</div>` : '';
+    return sub + byCat[cat].map(masterRowHtml).join('');
+  }).join('');
+}
+function masterSetTypeF(v){ masterTypeF=v; renderMaster(); }
+
+function masterRowHtml(r){
+  const isUnc = r.category===UNC;
+  const types = MASTER.types||['通常','CP','媒体'];
+  const typeBtns = types.map(t=>`<button class="${(r.type||'通常')===t?'on':''}" onclick="setMasterType('${r.optionId}','${t}')">${t}</button>`).join('');
+  return `<div class="mrow ${isUnc?'unc':''}" id="mrow-${r.optionId}">
+    <span class="mname" title="${esc(r.name)}">${esc(r.name)||'(名称なし)'}</span>
+    <span class="mcat" onclick="openCatPick('${r.optionId}')">${isUnc?'★未分類 ▾':esc(displayCat(r.category))+' ▾'}</span>
+    <span class="mtype">${typeBtns}</span>
+  </div>`;
+}
+function updateMasterRow(opt){ const el=document.getElementById('mrow-'+opt), r=MASTER.rows.find(x=>x.optionId===opt); if(el&&r) el.outerHTML=masterRowHtml(r); }
+
+async function setMasterType(opt, t){
+  const r = MASTER.rows.find(x=>x.optionId===opt); if(!r) return;
+  if (r.category===UNC){ alert('先にカテゴリを決めてください（種別だけの設定はできません）'); return; }
+  const prev=r.type; r.type=t; updateMasterRow(opt);
+  try { await apiPost('/api/assign', {assignments:[{optionId:opt, name:r.name, apiCat:r.apiCat, category:r.category, type:t}]}); masterDirty=true; }
+  catch(e){ r.type=prev; updateMasterRow(opt); onErr(e); }
+}
+
+/* --- カテゴリ選択（ドリルダウン）サブモーダル --- */
+function openCatPick(opt){
+  catPickOpt=opt; catPickDrill=null;
+  const r = MASTER.rows.find(x=>x.optionId===opt); if(!r) return;
+  document.getElementById('catPickModal').classList.add('on');
+  document.getElementById('catPickMsg').textContent='';
+  document.getElementById('catPickCard').innerHTML =
+    `<div class="nm">${esc(r.name)||'(名称なし)'}</div>
+     <div class="meta"><span class="amt">現在：<b style="color:var(--accent-d)">${esc(displayCat(r.category))}</b>${r.apiCat?` ・ APIカテゴリ:${esc(r.apiCat)}`:''}</span></div>`;
+  renderCatPick();
+}
+function closeCatPick(){ document.getElementById('catPickModal').classList.remove('on'); }
+function renderCatPick(){
+  const r = MASTER.rows.find(x=>x.optionId===catPickOpt); if(!r) return;
+  const list = document.getElementById('catPickList');
+  if (!catPickDrill){
+    const sugRoot = (r.suggestPath&&r.suggestPath.length)?r.suggestPath[0]:'';
+    list.innerHTML = renderGroupedList((CFG.categories||[]).slice(), sugRoot, "pickMasterCat(this.dataset.cat)", r.category)
+      + `<button class="exg" onclick="assignMasterCat('除外')">✕ 除外（集計に入れない）</button>`;
+  } else {
+    const sp=(r.suggestPath)||[]; const i=sp.indexOf(catPickDrill);
+    const sugChild=(i>=0&&i+1<sp.length)?sp[i+1]:null;
+    let kids=((TREE_MAP[catPickDrill]||{}).children||[]).map(c=>c.name);
+    if (sugChild) kids=[sugChild,...kids.filter(k=>k!==sugChild)];
+    const bread=getCatBreadcrumb(catPickDrill);
+    let html=`<div class="drill-hd">${bread?esc(bread)+' › ':''}<b>${esc(catPickDrill)}</b> の中から選択　<button class="back" onclick="catPickBack()">← 戻る</button></div>`;
+    html+=`<button class="reco" data-cat="${esc(catPickDrill)}" onclick="assignMasterCat(this.dataset.cat)"><span class="gname">${esc(catPickDrill)}（このまま）</span></button>`;
+    kids.forEach(c=>{ html+=makeCatBtn(c, c===sugChild?'reco':'', sugChild, "pickMasterCat(this.dataset.cat)"); });
+    list.innerHTML=html;
+  }
+}
+function pickMasterCat(cat){
+  if (cat!=='除外' && TREE_MAP[cat] && (TREE_MAP[cat].children||[]).length){ catPickDrill=cat; renderCatPick(); return; }
+  assignMasterCat(cat);
+}
+function catPickBack(){ catPickDrill=(TREE_MAP[catPickDrill]||{}).parent||null; renderCatPick(); }
+async function assignMasterCat(cat){
+  const opt=catPickOpt, r=MASTER.rows.find(x=>x.optionId===opt); if(!r) return;
+  const type = cat==='物販'?'通常':(r.type||'通常');
+  document.getElementById('catPickMsg').textContent='保存中…';
+  try {
+    await apiPost('/api/assign', {assignments:[{optionId:opt, name:r.name, apiCat:r.apiCat, category:cat, type}]});
+    r.category=cat; r.type=type; masterDirty=true;
+    closeCatPick(); renderMaster();
+  } catch(e){ onErr(e); }
+}
 
 /* ====== 施術ごとの振り分け編集 ====== */
 let editIt = null, editType = '通常', editCats = [];
@@ -1119,7 +1392,7 @@ function renderEdit(){
   document.getElementById('editCard').innerHTML = `
     <div class="nm">${esc(it.name)||'<span class="muted">(名称なし)</span>'}</div>
     <div class="meta">
-      <span class="amt">現在：<b style="color:var(--accent-d)">${esc(it.category)}</b>${isBuhan?'':` ／ ${editType}`} ・ ${yen(it.sales)} ・ ${num(it.count)}件</span>
+      <span class="amt">現在：<b style="color:var(--accent-d)">${esc(displayCat(it.category))}</b>${isBuhan?'':` ／ ${editType}`} ・ ${yen(it.sales)} ・ ${num(it.count)}件</span>
       ${isBuhan?'':`<span class="type-chips" id="editTypeChips">
         ${(CFG.types||[]).map(t=>`<button class="${t===editType?'on':''}" onclick="setEditType('${t}')">${t}</button>`).join('')}
       </span>`}
@@ -1203,7 +1476,7 @@ function renderSubCard(){
 
   list.innerHTML = children.map(c=>`
     <button data-cat="${esc(c)}" onclick="pickSubGroup(this.dataset.cat)">
-      <span class="gname">${esc(c)}</span>
+      <span class="gname">${esc(displayCat(c))}</span>
     </button>`).join('')
     + `<button data-cat="${esc(SUB_PENDING.parent)}" onclick="pickSubGroup(this.dataset.cat)" style="opacity:.5">
         <span class="gname">「${esc(SUB_PENDING.parent)}」のまま（変更なし）</span>
@@ -1225,6 +1498,9 @@ function skipSubItem(){ subIdx++; document.getElementById('subPendingMsg').textC
 
 /* ====== util ====== */
 function esc(s){ return String(s==null?'':s).replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m])); }
+// 画面表示用のカテゴリ名：内部は「〇〇（ハイコックス）」で区別しつつ、表示は「（ハイコックス）」を隠す
+// （親の階層で分かるため）。データ/保存/集計は必ず生のカテゴリ名を使う。
+function displayCat(c){ return String(c==null?'':c).replace(/（ハイコックス）$/,''); }
 function showLoad(msg){ document.getElementById('loadingMsg').textContent=msg||'読込中…'; document.getElementById('loading').classList.add('on'); }
 function hideLoad(){ document.getElementById('loading').classList.remove('on'); }
 function onErr(e){ hideLoad(); alert('エラー: '+(e && e.message ? e.message : e)); console.error(e); }
