@@ -60,7 +60,7 @@ const DEFAULT_CATEGORIES = [
   'ボトックス','ヒアルロン酸',
   '美容点滴・注射','高濃度ビタミンC点滴','エクソソーム点滴','NMN点滴','白玉注射',
   '肌育注射','スネコスパフォルマ','リジュランi','リジュランHB Plus',
-  'プルリアルデンシファイ','ジャルプロスーパーハイドロ','オーロラ注射','その他の薬剤（肌育注射）',
+  'プルリアルデンシファイ','ジャルプロスーパーハイドロ','オーロラ注射','リズネ','その他の薬剤（肌育注射）',
   'ショートスレッド',
   '脂肪溶解注射','HIFU','ルメッカ',
   'インモード','MiniFX','Forma','Vリフト',
@@ -99,7 +99,7 @@ const CATEGORY_TREE = [
   ]},
   { name:'肌育注射', children:[
     { name:'スネコスパフォルマ' }, { name:'リジュランi' }, { name:'リジュランHB Plus' },
-    { name:'プルリアルデンシファイ' }, { name:'ジャルプロスーパーハイドロ' }, { name:'オーロラ注射' }, { name:'その他の薬剤（肌育注射）' },
+    { name:'プルリアルデンシファイ' }, { name:'ジャルプロスーパーハイドロ' }, { name:'オーロラ注射' }, { name:'リズネ' }, { name:'その他の薬剤（肌育注射）' },
   ]},
   { name:'ショートスレッド' },
   { name:'脂肪溶解注射' },
@@ -581,13 +581,14 @@ const CATEGORY_ALIAS = {
   'NMN点滴':['NMN'],
   '白玉注射':['白玉'],
   'ヒアルロン酸':['ヒアルロン'],
-  '肌育注射':['肌育','プロファイロ','リズネ','水光','スキンブースター'],
+  '肌育注射':['肌育','プロファイロ','水光','スキンブースター'],
   'スネコスパフォルマ':['スネコスパフォルマ','パフォルマ'],
   'リジュランi':['リジュランi','リジュランアイ'],
   'リジュランHB Plus':['リジュランHB','HBPlus'],
   'プルリアルデンシファイ':['プルリアル','デンシファイ'],
   'ジャルプロスーパーハイドロ':['ジャルプロ','スーパーハイドロ'],
   'オーロラ注射':['オーロラ'],
+  'リズネ':['リズネ'],
   'ショートスレッド':['ショートスレッド','スレッド','糸','ビタミンスレ','サーモン','オーダーメイドスレ'],
   '脂肪溶解注射':['脂肪溶解','脂肪','BNLS','カベリン','チンセラ','FatX','fatX','Fat X','fat X','FATX'],
   'HIFU':['HIFU','ハイフ','ウルトラフォーマー','ソノクイーン'],
@@ -1160,6 +1161,18 @@ async function migrateKumaponMedia(){
   console.log('  → くまぽん種別を媒体に修正:', changed.length, '件');
 }
 
+// 親カテゴリにいた特定名の施術を子カテゴリへ移す（例: 肌育注射内のリズネ → リズネ）。起動時・冪等。
+async function migrateNameToChild(parentCat, nameKw, childCat){
+  const changed = [];
+  MASTER_ROWS.forEach(r=>{
+    if (String(r.category||'').trim()===parentCat && String(r.name||'').includes(nameKw)){ r.category = childCat; changed.push(r); }
+  });
+  if (!changed.length) return;
+  if (SB_ON){ try { await sbUpsert('mfdash_master', changed.map(toSbMaster)); } catch(e){ console.error('子カテゴリ移行 SB書込失敗:', e.message); } }
+  localWriteMaster(MASTER_ROWS);
+  console.log('  → '+parentCat+'内の「'+nameKw+'」を'+childCat+'へ:', changed.length, '件');
+}
+
 // 廃止した子カテゴリを親へ統合（例: ヴェルベットスキン等 → ダーマペン）。起動時・冪等。
 async function migrateMergeCats(fromCats, toCat){
   const from = new Set(fromCats);
@@ -1180,6 +1193,7 @@ async function migrateMergeCats(fromCats, toCat){
   try { await migrateMergeCats(['ヴェルベットスキン','スーパーヴェルベットスキン'], 'ダーマペン'); } catch(e){ console.error('ダーマペン統合失敗:', e.message); }
   try { await migrateMergeCats(['ビタミンスレッド','サーモンスレッド','オーダーメイドスレッド'], 'ショートスレッド'); } catch(e){ console.error('ショートスレッド統合失敗:', e.message); }
   try { await migrateKumaponMedia(); } catch(e){ console.error('くまぽん種別修正失敗:', e.message); }
+  try { await migrateNameToChild('肌育注射', 'リズネ', 'リズネ'); } catch(e){ console.error('リズネ移行失敗:', e.message); }
   if (SB_ON) migrateCacheToSb().catch(e=>console.error('キャッシュ移行失敗:', e.message));
   server.listen(PORT, () => {
     const ok = CLINIC_LIST.filter(c=>process.env[c.key+'_CLIENT_ID']).map(c=>c.name);
