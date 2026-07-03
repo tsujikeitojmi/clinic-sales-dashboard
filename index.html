@@ -416,6 +416,7 @@
       <h3 style="margin:0">🗂 施術マスタ</h3>
       <select id="masterClinicSel" onchange="switchMasterClinic(this.value)"></select>
       <span class="muted" id="masterClinicName" style="font-size:12px"></span>
+      <button class="ghost" onclick="openPending()" style="margin-left:auto">未分類を振り分け</button>
     </div>
     <div class="master-layout">
       <aside class="master-nav">
@@ -1125,6 +1126,7 @@ function closePending(){
     autoAssignDoneFor.delete(curClinic); // 手動振り分け後は auto-assign を再実行できるよう解除
     overviewCacheKey = null; // 振り分け後は OVERVIEW も再取得
     reload();
+    if (document.getElementById('masterModal').classList.contains('on')) openMaster(); // 施術マスタも更新
   }
   autoAssigned = 0;
 }
