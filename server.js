@@ -847,15 +847,21 @@ async function listCachedMonths(clinicKey){
 // 未分類(pending)を集める。scope: 'month'=その月 / 'all'=キャッシュ済み全月（optionIdで合算）
 async function collectPending(clinicKey, year, month, scope){
   const masterMap = loadMasterMap();
+  // category が null/★未分類 のマスタエントリは「未振り分け」として扱う
+  // （振り分けカードに表示されるよう、これらを masterMap から外したコピーを使う）
+  const effectiveMap = {};
+  Object.keys(masterMap).forEach(k=>{
+    if (masterMap[k].category && masterMap[k].category !== UNCLASSIFIED) effectiveMap[k] = masterMap[k];
+  });
   const pending = {};
   if (scope==='all'){
     const months = await listCachedMonths(clinicKey);
     for (const {year:y, month:m} of months){
-      const raw = await readRaw(clinicKey, y, m); if (raw) aggregateClinic(raw, masterMap, pending);
+      const raw = await readRaw(clinicKey, y, m); if (raw) aggregateClinic(raw, effectiveMap, pending);
     }
   } else {
     const { values } = await getValues(clinicKey, year, month, false);
-    aggregateClinic(values, masterMap, pending);
+    aggregateClinic(values, effectiveMap, pending);
   }
   return pending;
 }
