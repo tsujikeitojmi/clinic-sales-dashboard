@@ -61,7 +61,7 @@ const DEFAULT_CATEGORIES = [
   '美容点滴・注射','高濃度ビタミンC点滴','エクソソーム点滴','NMN点滴','白玉注射',
   '肌育注射','スネコスパフォルマ','リジュランi','リジュランHB Plus',
   'プルリアルデンシファイ','ジャルプロスーパーハイドロ','オーロラ注射',
-  'ショートスレッド','ビタミンスレッド','サーモンスレッド','オーダーメイドスレッド',
+  'ショートスレッド',
   '脂肪溶解注射','HIFU','ルメッカ',
   'インモード','MiniFX','Forma','Vリフト',
   'ダーマペン',
@@ -101,9 +101,7 @@ const CATEGORY_TREE = [
     { name:'スネコスパフォルマ' }, { name:'リジュランi' }, { name:'リジュランHB Plus' },
     { name:'プルリアルデンシファイ' }, { name:'ジャルプロスーパーハイドロ' }, { name:'オーロラ注射' },
   ]},
-  { name:'ショートスレッド', children:[
-    { name:'ビタミンスレッド' }, { name:'サーモンスレッド' }, { name:'オーダーメイドスレッド' },
-  ]},
+  { name:'ショートスレッド' },
   { name:'脂肪溶解注射' },
   { name:'HIFU' }, { name:'ルメッカ' },
   { name:'インモード', children:[
@@ -193,7 +191,7 @@ async function sbDeleteCat(name){
 }
 
 // 廃止カテゴリ（サイドバーから除去・Supabaseからも削除）
-const REMOVE_CATS = new Set(['水光注射','ヴェルベットスキン','スーパーヴェルベットスキン']);
+const REMOVE_CATS = new Set(['水光注射','ヴェルベットスキン','スーパーヴェルベットスキン','ビタミンスレッド','サーモンスレッド','オーダーメイドスレッド']);
 
 // --- Supabase キャッシュ（mfdash_cache テーブル） ---
 async function sbCacheGet(clinicKey, year, month){
@@ -590,10 +588,7 @@ const CATEGORY_ALIAS = {
   'プルリアルデンシファイ':['プルリアル','デンシファイ'],
   'ジャルプロスーパーハイドロ':['ジャルプロ','スーパーハイドロ'],
   'オーロラ注射':['オーロラ'],
-  'ショートスレッド':['ショートスレッド','スレッド','糸'],
-  'ビタミンスレッド':['ビタミンスレッド','ビタミンスレ'],
-  'サーモンスレッド':['サーモンスレッド','サーモン'],
-  'オーダーメイドスレッド':['オーダーメイドスレッド','オーダーメイドスレ'],
+  'ショートスレッド':['ショートスレッド','スレッド','糸','ビタミンスレ','サーモン','オーダーメイドスレ'],
   '脂肪溶解注射':['脂肪溶解','脂肪','BNLS','カベリン','チンセラ','FatX','fatX','Fat X','fat X','FATX'],
   'HIFU':['HIFU','ハイフ','ウルトラフォーマー','ソノクイーン'],
   'ルメッカ':['ルメッカ'],
@@ -1172,6 +1167,7 @@ async function migrateMergeCats(fromCats, toCat){
   catch(e){ console.error('保存データの読込に失敗（ローカルにフォールバック）:', e.message); MASTER_ROWS = localReadMaster(); CAT_ARR = localReadCats(); if(!CAT_ARR.length) CAT_ARR = DEFAULT_CATEGORIES.slice(); }
   try { await migrateHicox(); } catch(e){ console.error('ハイコックス付け替え失敗:', e.message); }
   try { await migrateMergeCats(['ヴェルベットスキン','スーパーヴェルベットスキン'], 'ダーマペン'); } catch(e){ console.error('ダーマペン統合失敗:', e.message); }
+  try { await migrateMergeCats(['ビタミンスレッド','サーモンスレッド','オーダーメイドスレッド'], 'ショートスレッド'); } catch(e){ console.error('ショートスレッド統合失敗:', e.message); }
   try { await migrateKumaponMedia(); } catch(e){ console.error('くまぽん種別修正失敗:', e.message); }
   if (SB_ON) migrateCacheToSb().catch(e=>console.error('キャッシュ移行失敗:', e.message));
   server.listen(PORT, () => {
