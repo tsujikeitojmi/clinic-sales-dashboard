@@ -558,7 +558,7 @@ async function getValues(clinicKey, year, month, refresh){
 }
 
 /* ====================== キーワード自動サジェスト ====================== */
-const MEDIA_KW = ['カンナム','キレイパス','ホットペッパー','HPB','トリビュー','くまポン'];
+const MEDIA_KW = ['カンナム','キレイパス','ホットペッパー','HPB','トリビュー','くまポン','くまぽん'];
 const CP_KW    = ['キャンペーン','ゲリラ','フェア','感謝祭','スキンチケット','CP'];
 
 // 各カテゴリにマッチさせる別名キーワード（表記揺れ対策）。施術名/APIカテゴリに含まれたら近いと判定。
@@ -1139,6 +1139,21 @@ async function migrateHicox(){
   console.log('  → ハイコックス薬剤の付け替え:', changed.length, '件');
 }
 
+// 「くまぽん」施術の種別を媒体に統一（キーワードがカタカナ限定で通常のままだった分を修正）。起動時・冪等。
+async function migrateKumaponMedia(){
+  const changed = [];
+  MASTER_ROWS.forEach(r=>{
+    const nm = String(r.name||''); const cat = String(r.category||'').trim();
+    if ((nm.includes('くまぽん')||nm.includes('くまポン')) && !['物販','除外','★未分類'].includes(cat) && r.type!=='媒体'){
+      r.type = '媒体'; changed.push(r);
+    }
+  });
+  if (!changed.length) return;
+  if (SB_ON){ try { await sbUpsert('mfdash_master', changed.map(toSbMaster)); } catch(e){ console.error('くまぽん種別 SB書込失敗:', e.message); } }
+  localWriteMaster(MASTER_ROWS);
+  console.log('  → くまぽん種別を媒体に修正:', changed.length, '件');
+}
+
 // 廃止した子カテゴリを親へ統合（例: ヴェルベットスキン等 → ダーマペン）。起動時・冪等。
 async function migrateMergeCats(fromCats, toCat){
   const from = new Set(fromCats);
@@ -1157,6 +1172,7 @@ async function migrateMergeCats(fromCats, toCat){
   catch(e){ console.error('保存データの読込に失敗（ローカルにフォールバック）:', e.message); MASTER_ROWS = localReadMaster(); CAT_ARR = localReadCats(); if(!CAT_ARR.length) CAT_ARR = DEFAULT_CATEGORIES.slice(); }
   try { await migrateHicox(); } catch(e){ console.error('ハイコックス付け替え失敗:', e.message); }
   try { await migrateMergeCats(['ヴェルベットスキン','スーパーヴェルベットスキン'], 'ダーマペン'); } catch(e){ console.error('ダーマペン統合失敗:', e.message); }
+  try { await migrateKumaponMedia(); } catch(e){ console.error('くまぽん種別修正失敗:', e.message); }
   if (SB_ON) migrateCacheToSb().catch(e=>console.error('キャッシュ移行失敗:', e.message));
   server.listen(PORT, () => {
     const ok = CLINIC_LIST.filter(c=>process.env[c.key+'_CLIENT_ID']).map(c=>c.name);
