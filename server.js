@@ -923,6 +923,10 @@ async function getMasterList(clinicKey){
     raw.forEach(v=>(v.paymentItems||[]).forEach(it=>{
       const opt = String(it.optionId||'').trim();
       if (!opt || byOpt[opt]) return;
+      // aggregateClinic と同じく sales=0 のアイテムは除外（回数券消化など0円アイテムは集計対象外）
+      const digest = Math.floor(+(it.courseDigestionAmountWithTax)||0);
+      const genuine = Math.floor(+(it.genuinePriceWithTax)||0);
+      if (digest === 0 && genuine === 0) return;
       byOpt[opt] = { optionId:opt, name:it.name||'', apiCat:it.category||'' };
     }));
   }
