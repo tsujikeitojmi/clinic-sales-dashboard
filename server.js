@@ -581,7 +581,7 @@ const CATEGORY_ALIAS = {
   'NMN点滴':['NMN'],
   '白玉注射':['白玉'],
   'ヒアルロン酸':['ヒアルロン'],
-  '肌育注射':['肌育','プロファイロ'],
+  '肌育注射':['肌育','プロファイロ','リズネ','水光','スキンブースター'],
   'スネコスパフォルマ':['スネコスパフォルマ','パフォルマ'],
   'リジュランi':['リジュランi','リジュランアイ'],
   'リジュランHB Plus':['リジュランHB','HBPlus'],
@@ -663,17 +663,28 @@ function rootOf(n){ let r=n; while(NODE_INFO[r] && NODE_INFO[r].parent) r=NODE_I
 // 主メニュー加点：強い順に大きめの加点（ポテンツァ=6 … ボトックス=1）。リスト外は0。
 // 加点はスコアに乗せるので、セットでは強い方に寄りつつ、単独の具体的一致（例:アクネフォト）は壊さない。
 function highBonus(root){ const i = CATEGORY_PRIORITY.indexOf(root); return i>=0 ? (CATEGORY_PRIORITY.length - i) : 0; }
+// そのノードに当たった一番長い別名（文字列）。部分一致判定に使う。
+function ownMatch(text, name){ let best=''; for (const kw of aliasesOf(name)){ if (kw && text.indexOf(kw)>=0 && kw.length>best.length) best=kw; } return best; }
 
 function suggestBestPath(name, apiCat){
   const text = String(name||'') + ' ' + String(apiCat||'');
-  let best=null, bestEff=-Infinity, bestDepth=-1;
+  // 候補ノードを収集（当たった語 mk・スコア sc・ルート・深さ）
+  const cands = [];
   ALL_NODES.forEach(n=>{
-    if (ownScore(text, n) <= 0) return;                 // 自分自身が当たらないノードは選ばない
+    const mk = ownMatch(text, n);
+    if (!mk) return;
     let sc=0, cur=n; while(cur){ sc+=ownScore(text,cur); cur=NODE_INFO[cur].parent; }  // 先祖ぶん加点
-    const root = rootOf(n);
-    const eff = sc + highBonus(root) - (ADDON_CATS.has(root) ? 10000 : 0); // 主メニュー加点／付け合わせは大幅減点
-    const d = NODE_INFO[n].depth;
-    if (eff>bestEff || (eff===bestEff && d>bestDepth)){ best=n; bestEff=eff; bestDepth=d; } // 同点は深い方＝具体的
+    cands.push({ n, mk, sc, root:rootOf(n), depth:NODE_INFO[n].depth });
+  });
+  if (!cands.length) return [];
+  // 部分一致（自分の当たり語が、他候補のより長い当たり語に含まれる）は優先加点を無効化。
+  //  例「スネコスパフォルマ」に対し'スネコス'は部分一致→ポテンツァ加点を効かせない／'フォト'⊂'アクネフォト' 等
+  cands.forEach(c=>{ c.partial = cands.some(o=> o!==c && o.mk.length>c.mk.length && o.mk.indexOf(c.mk)>=0); });
+  let best=null, bestEff=-Infinity, bestDepth=-1;
+  cands.forEach(c=>{
+    const bonus = c.partial ? 0 : highBonus(c.root);
+    const eff = c.sc + bonus - (ADDON_CATS.has(c.root) ? 10000 : 0); // 主メニュー加点／付け合わせは大幅減点
+    if (eff>bestEff || (eff===bestEff && c.depth>bestDepth)){ best=c.n; bestEff=eff; bestDepth=c.depth; } // 同点は深い方
   });
   if (!best) return [];
   const path=[]; let cur=best; while(cur){ path.unshift(cur); cur=NODE_INFO[cur].parent; }
