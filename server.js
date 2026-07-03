@@ -64,7 +64,7 @@ const DEFAULT_CATEGORIES = [
   'ショートスレッド','ビタミンスレッド','サーモンスレッド','オーダーメイドスレッド',
   '脂肪溶解注射','HIFU','ルメッカ',
   'インモード','MiniFX','Forma','Vリフト',
-  'ダーマペン','ヴェルベットスキン','スーパーヴェルベットスキン',
+  'ダーマペン',
   'ピーリング','マッサージピール','ミラノピール','ララドクター','その他のピーリング',
   'リバースピール','サリチル酸ピール',
   'ハイドラ','ケアシス','レナトスTa+','ペップビュー','エクソソーム（ケアシス）','その他の薬剤',
@@ -109,9 +109,7 @@ const CATEGORY_TREE = [
   { name:'インモード', children:[
     { name:'MiniFX' }, { name:'Forma' }, { name:'Vリフト' },
   ]},
-  { name:'ダーマペン', children:[
-    { name:'ヴェルベットスキン' }, { name:'スーパーヴェルベットスキン' },
-  ]},
+  { name:'ダーマペン' },
   { name:'ピーリング', children:[
     { name:'マッサージピール' }, { name:'ミラノピール' }, { name:'ララドクター' }, { name:'その他のピーリング' },
     { name:'リバースピール' }, { name:'サリチル酸ピール' },
@@ -195,7 +193,7 @@ async function sbDeleteCat(name){
 }
 
 // 廃止カテゴリ（サイドバーから除去・Supabaseからも削除）
-const REMOVE_CATS = new Set(['水光注射']);
+const REMOVE_CATS = new Set(['水光注射','ヴェルベットスキン','スーパーヴェルベットスキン']);
 
 // --- Supabase キャッシュ（mfdash_cache テーブル） ---
 async function sbCacheGet(clinicKey, year, month){
@@ -603,9 +601,7 @@ const CATEGORY_ALIAS = {
   'MiniFX':['MiniFX','ミニFX'],
   'Forma':['Forma','フォルマ'],
   'Vリフト':['Vリフト'],
-  'ダーマペン':['ダーマペン'],
-  'ヴェルベットスキン':['ヴェルベットスキン','ヴェルベット'],
-  'スーパーヴェルベットスキン':['スーパーヴェルベットスキン','スーパーヴェルベット'],
+  'ダーマペン':['ダーマペン','ヴェルベットスキン','ヴェルベット'],
   'ピーリング':['ピーリング','ピール'],
   'マッサージピール':['マッサージピール','コスメラン','TCA'],
   'ミラノピール':['ミラノ','ミラノリ'],
@@ -1143,10 +1139,24 @@ async function migrateHicox(){
   console.log('  → ハイコックス薬剤の付け替え:', changed.length, '件');
 }
 
+// 廃止した子カテゴリを親へ統合（例: ヴェルベットスキン等 → ダーマペン）。起動時・冪等。
+async function migrateMergeCats(fromCats, toCat){
+  const from = new Set(fromCats);
+  const changed = [];
+  MASTER_ROWS.forEach(r=>{
+    if (from.has(String(r.category||'').trim())){ r.category = toCat; changed.push(r); }
+  });
+  if (!changed.length) return;
+  if (SB_ON){ try { await sbUpsert('mfdash_master', changed.map(toSbMaster)); } catch(e){ console.error('カテゴリ統合 SB書込失敗:', e.message); } }
+  localWriteMaster(MASTER_ROWS);
+  console.log('  → カテゴリ統合:', fromCats.join('/'), '→', toCat, changed.length, '件');
+}
+
 (async () => {
   try { await loadState(); }
   catch(e){ console.error('保存データの読込に失敗（ローカルにフォールバック）:', e.message); MASTER_ROWS = localReadMaster(); CAT_ARR = localReadCats(); if(!CAT_ARR.length) CAT_ARR = DEFAULT_CATEGORIES.slice(); }
   try { await migrateHicox(); } catch(e){ console.error('ハイコックス付け替え失敗:', e.message); }
+  try { await migrateMergeCats(['ヴェルベットスキン','スーパーヴェルベットスキン'], 'ダーマペン'); } catch(e){ console.error('ダーマペン統合失敗:', e.message); }
   if (SB_ON) migrateCacheToSb().catch(e=>console.error('キャッシュ移行失敗:', e.message));
   server.listen(PORT, () => {
     const ok = CLINIC_LIST.filter(c=>process.env[c.key+'_CLIENT_ID']).map(c=>c.name);
