@@ -264,10 +264,10 @@ async function loadState(){
   }
 }
 
-// APIアクセス毎に呼ぶ。Supabase利用時は最大3秒間隔で最新を取り直す（別PCの変更を反映）。
+// APIアクセス毎に呼ぶ。Supabase利用時は最大30秒間隔で最新を取り直す（別PCの変更を反映）。
 async function ensureFresh(){
   if (!SB_ON) return;
-  if (Date.now()-lastLoad > 3000){ try{ await sbLoadAll(); }catch(e){ console.error('Supabase再取得失敗:', e.message); } }
+  if (Date.now()-lastLoad > 30000){ try{ await sbLoadAll(); }catch(e){ console.error('Supabase再取得失敗:', e.message); } }
 }
 
 /* ====================== カテゴリ/マスタ アクセサ（メモリから） ====================== */
@@ -534,6 +534,7 @@ async function writeRaw(clinicKey, year, month, valuesRaw){
   const fetchedAt = new Date().toISOString();
   fs.writeFileSync(cacheFile(clinicKey, year, month), JSON.stringify({ fetchedAt, values }), 'utf8');
   sbCacheUpsert(clinicKey, year, month, fetchedAt, values); // Supabaseへも保存（待たない）
+  trendCacheInvalidAt = Date.now(); // 月別トレンドキャッシュを無効化
 }
 function cacheExists(clinicKey, year, month){ return fs.existsSync(cacheFile(clinicKey, year, month)); }
 
@@ -713,7 +714,14 @@ function sumByCat(byCat){
   return s;
 }
 
+// 月別トレンドキャッシュ（データ変更時に無効化）
+const trendCache = new Map();
+let trendCacheInvalidAt = 0;
+
 async function buildMonthlyTrend(clinicKey, year, month, currentByCat){
+  const cacheKey = `${clinicKey}_${year}_${month}`;
+  const cached = trendCache.get(cacheKey);
+  if (cached && cached.ts >= trendCacheInvalidAt) return cached.data;
   const masterMap = loadMasterMap();
   const endS = year*12 + (month-1);
   const startS = endS - 11;   // 選択月から過去12か月（1年間）
@@ -746,6 +754,7 @@ async function buildMonthlyTrend(clinicKey, year, month, currentByCat){
       cats,
     };
   }));
+  trendCache.set(cacheKey, { data: out, ts: Date.now() });
   return out;
 }
 
@@ -911,6 +920,7 @@ async function getMasterList(clinicKey){
 
 async function assignMaster(assignments){
   if (!assignments || !assignments.length) return {updated:0};
+  trendCacheInvalidAt = Date.now(); // 月別トレンドキャッシュを無効化
   const idxByOpt = {};
   MASTER_ROWS.forEach((r,i)=>{ const o=String(r.optionId||'').trim(); if(o) idxByOpt[o]=i; });
   const changed = [], newCats = [];

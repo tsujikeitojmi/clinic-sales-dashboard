@@ -450,6 +450,7 @@
 let CFG = null;
 let DATA = null;
 let OVERVIEW = null;      // 全院のサイドバー用（キャッシュ済みの院だけ値あり）
+let overviewCacheKey = null;  // OVERVIEW をキャッシュした年月 'YYYY_M'
 let curClinic = null;
 let curCat = null;        // 選択中カテゴリ（null=全体）
 let curSubCat = null;     // 選択中サブカテゴリ（null=親全体）
@@ -521,7 +522,11 @@ async function reload(refresh){
     const params = {clinic:curClinic, year:y, month:m};
     if (refresh) params.refresh = 1;
     DATA = await api('/api/dashboard', params);
-    OVERVIEW = await api('/api/overview', {year:y, month:m});
+    const ovKey = `${y}_${m}`;
+    if (!OVERVIEW || overviewCacheKey !== ovKey) {
+      OVERVIEW = await api('/api/overview', {year:y, month:m});
+      overviewCacheKey = ovKey;
+    }
     render(); hideLoad(); toggleDetailPanels();
     runAutoAssignBg(); // バックグラウンドで自動振り分け（待たない）
     autoRefreshBg();   // 今月を開いたら裏で最新取得して差し替え（待たない）
@@ -1084,9 +1089,12 @@ let assignedCount = 0; // このセッションで手動振り分けした数
 let autoAssigned = 0;  // 自動振り分けした数（バックグラウンド分を含む）
 let bgAutoAssigned = 0; // バックグラウンド自動振り分けの件数
 let pendingScope = 'all';  // 'all'=キャッシュ済み全月 / 'month'=選択中の月だけ
+const autoAssignDoneFor = new Set(); // セッション中に auto-assign 済みの院キー
 
 /* ページ読み込み後にバックグラウンドで自動振り分けを実行（ボタン待ちを無くす） */
 async function runAutoAssignBg(){
+  if (autoAssignDoneFor.has(curClinic)) return; // 同セッションで同院は1回だけ
+  autoAssignDoneFor.add(curClinic);
   bgAutoAssigned = 0;
   try {
     const y=+document.getElementById('yearSel').value, m=+document.getElementById('monthSel').value;
@@ -1130,7 +1138,11 @@ async function openPending(scope){
 
 function closePending(){
   document.getElementById('pendingModal').classList.remove('on');
-  if (assignedCount>0 || autoAssigned>0) reload();   // 自動/手動で振り分けた分があれば再集計
+  if (assignedCount>0 || autoAssigned>0){
+    autoAssignDoneFor.delete(curClinic); // 手動振り分け後は auto-assign を再実行できるよう解除
+    overviewCacheKey = null; // 振り分け後は OVERVIEW も再取得
+    reload();
+  }
   autoAssigned = 0;
 }
 
