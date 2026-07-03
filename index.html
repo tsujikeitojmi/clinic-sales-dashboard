@@ -836,21 +836,6 @@ function renderSubCatChips(){
     }
   }
 
-  // 子カテゴリ振り分けボタン
-  const subBtnHtml = (parentName)=>{
-    const cnt = DATA && DATA.items ? DATA.items.filter(x=>x.category===parentName).length : 0;
-    return `<button class="subcat-chip" style="background:var(--accent-tint);border-color:#efd9dd;color:var(--accent-d);font-weight:600"
-      onclick="openSubPending('${esc(parentName)}')">${esc(parentName)}の子カテゴリ振り分け${cnt?` (${cnt}件)`:''}…</button>`;
-  };
-  html += `<div class="subcat-row" style="margin-top:4px">${subBtnHtml(curCat)}</div>`;
-  // curSubCat にも子がある場合（例: CP-25→薬剤）は2段目にもボタンを追加
-  if (curSubCat){
-    const sub2 = TREE_MAP[curSubCat];
-    if (sub2 && sub2.children && sub2.children.length){
-      html += `<div class="subcat-row">${subBtnHtml(curSubCat)}</div>`;
-    }
-  }
-
   el.style.display='flex';
   el.innerHTML = html;
 }
