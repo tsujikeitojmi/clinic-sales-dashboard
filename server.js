@@ -572,10 +572,10 @@ const CATEGORY_ALIAS = {
   'ニキビ撃退セット':['ニキビ撃退','ニキビセット'],
   '脱毛':['脱毛'],
   'ピコレーザー':['ピコレーザー','ピコ'],
-  'ピコスポット':['ピコスポット','スポット','シミ取り','シミ'],
-  'ピコトーニング':['ピコトーニング','ピコトーン'],
-  'ピコフラクショナル':['ピコフラクショナル','ピコフラク'],
-  'ピコダブル':['ピコダブル'],
+  'ピコスポット':['ピコスポット','ピコS','スポット','シミ取り','シミ'],
+  'ピコトーニング':['ピコトーニング','ピコトーン','ピコT'],
+  'ピコフラクショナル':['ピコフラクショナル','ピコフラク','ピコF'],
+  'ピコダブル':['ピコダブル','ピコW'],
   'デンシティ':['デンシティ'],
   'ハイコックス':['ハイコックス','ハイドラコックス','コックス'],
   'ボトックス':['ボトックス','ボツリヌス','ボツ'],
@@ -618,7 +618,7 @@ const CATEGORY_ALIAS = {
   'レナトスTa+':['レナトス'],
   'ペップビュー':['ペップビュー','ペップ'],
   'エクソソーム（ケアシス）':['エクソソーム','エクソ'],
-  '物販':['物販','物品販売','コスメ販売','スキンケア販売'],
+  '物販':['《物販》','物販','物品販売','コスメ販売','スキンケア販売'],
   // ポテンツァ サブカテゴリ
   'CP-25':['CP-25','CP25'],
   'S-16':['S-16','S16'],
@@ -665,14 +665,24 @@ const ALL_NODES = Object.keys(NODE_INFO);
 // このノード名の別名が施術名に含まれれば、一番長い一致の文字数（具体的なほど高い）
 function ownScore(text, name){ let s=0; for (const kw of aliasesOf(name)){ if (kw && text.indexOf(kw)>=0) s=Math.max(s,kw.length); } return s; }
 // ルート→葉の「おすすめパス」。自ノード＋先祖の一致を合算し、親の言葉も当たるパスを優先（例:ハイコックス系）。
+// セット施術の「主メニュー」優先度。強い順。ここに無いカテゴリは中間、付け合わせは最弱。
+const CATEGORY_PRIORITY = ['ポテンツァ','ピコレーザー','ハイコックス','フォトフェイシャル','アクネフォト','ボトックス'];
+const ADDON_CATS = new Set(['ハイドラ','ケアシス']);   // 付け合わせ：セットでは負ける（物販は含めない）
+function rootOf(n){ let r=n; while(NODE_INFO[r] && NODE_INFO[r].parent) r=NODE_INFO[r].parent; return r; }
+// 主メニュー加点：強い順に大きめの加点（ポテンツァ=6 … ボトックス=1）。リスト外は0。
+// 加点はスコアに乗せるので、セットでは強い方に寄りつつ、単独の具体的一致（例:アクネフォト）は壊さない。
+function highBonus(root){ const i = CATEGORY_PRIORITY.indexOf(root); return i>=0 ? (CATEGORY_PRIORITY.length - i) : 0; }
+
 function suggestBestPath(name, apiCat){
   const text = String(name||'') + ' ' + String(apiCat||'');
-  let best=null, bestScore=0, bestDepth=-1;
+  let best=null, bestEff=-Infinity, bestDepth=-1;
   ALL_NODES.forEach(n=>{
     if (ownScore(text, n) <= 0) return;                 // 自分自身が当たらないノードは選ばない
     let sc=0, cur=n; while(cur){ sc+=ownScore(text,cur); cur=NODE_INFO[cur].parent; }  // 先祖ぶん加点
+    const root = rootOf(n);
+    const eff = sc + highBonus(root) - (ADDON_CATS.has(root) ? 10000 : 0); // 主メニュー加点／付け合わせは大幅減点
     const d = NODE_INFO[n].depth;
-    if (sc>bestScore || (sc===bestScore && d>bestDepth)){ best=n; bestScore=sc; bestDepth=d; }  // 同点は深い方＝具体的
+    if (eff>bestEff || (eff===bestEff && d>bestDepth)){ best=n; bestEff=eff; bestDepth=d; } // 同点は深い方＝具体的
   });
   if (!best) return [];
   const path=[]; let cur=best; while(cur){ path.unshift(cur); cur=NODE_INFO[cur].parent; }
