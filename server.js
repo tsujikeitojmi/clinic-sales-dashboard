@@ -67,7 +67,7 @@ const DEFAULT_CATEGORIES = [
   'ダーマペン','ヴェルベットスキン','スーパーヴェルベットスキン',
   'ピーリング','マッサージピール','ミラノピール','ララドクター','その他のピーリング',
   'リバースピール','サリチル酸ピール',
-  'ハイドラ','ケアシス','レナトスTa+','ペップビュー','エクソソーム（ケアシス）',
+  'ハイドラ','ケアシス','レナトスTa+','ペップビュー','エクソソーム（ケアシス）','その他の薬剤',
   '物販',
 ];
 
@@ -118,7 +118,7 @@ const CATEGORY_TREE = [
   ]},
   { name:'ハイドラ' },
   { name:'ケアシス', children:[
-    { name:'レナトスTa+' }, { name:'ペップビュー' }, { name:'エクソソーム（ケアシス）' },
+    { name:'レナトスTa+' }, { name:'ペップビュー' }, { name:'エクソソーム（ケアシス）' }, { name:'その他の薬剤' },
   ]},
   { name:'物販' },
 ];
@@ -195,7 +195,7 @@ async function sbDeleteCat(name){
 }
 
 // 廃止カテゴリ（サイドバーから除去・Supabaseからも削除）
-const REMOVE_CATS = new Set(['水光注射', 'その他の薬剤']);
+const REMOVE_CATS = new Set(['水光注射']);
 
 // --- Supabase キャッシュ（mfdash_cache テーブル） ---
 async function sbCacheGet(clinicKey, year, month){
