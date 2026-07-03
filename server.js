@@ -58,9 +58,9 @@ const DEFAULT_CATEGORIES = [
   'ハイコックス','スキンボトックス','ジュベリジュ',
   'リジュラン（ハイコックス）','ジュベルック（ハイコックス）','スネコス（ハイコックス）','エクソソーム（ハイコックス）','ACRS（ハイコックス）',
   'ボトックス','ヒアルロン酸',
-  '美容点滴・注射','高濃度ビタミンC点滴','エクソソーム点滴','NMN点滴','白玉注射',
+  '美容点滴・注射','高濃度ビタミンC点滴','エクソソーム点滴','NMN点滴','白玉注射','疲労回復点滴',
   '肌育注射','スネコスパフォルマ','リジュランi','リジュランHB Plus',
-  'プルリアルデンシファイ','ジャルプロスーパーハイドロ','オーロラ注射','リズネ','その他の薬剤（肌育注射）',
+  'プルリアルデンシファイ','ジャルプロスーパーハイドロ','オーロラ注射','その他の薬剤（肌育注射）',
   'ショートスレッド',
   '脂肪溶解注射','HIFU','ルメッカ',
   'インモード','MiniFX','Forma','Vリフト',
@@ -95,11 +95,11 @@ const CATEGORY_TREE = [
   ]},
   { name:'ボトックス' }, { name:'ヒアルロン酸' },
   { name:'美容点滴・注射', children:[
-    { name:'高濃度ビタミンC点滴' }, { name:'エクソソーム点滴' }, { name:'NMN点滴' }, { name:'白玉注射' },
+    { name:'高濃度ビタミンC点滴' }, { name:'エクソソーム点滴' }, { name:'NMN点滴' }, { name:'白玉注射' }, { name:'疲労回復点滴' },
   ]},
   { name:'肌育注射', children:[
     { name:'スネコスパフォルマ' }, { name:'リジュランi' }, { name:'リジュランHB Plus' },
-    { name:'プルリアルデンシファイ' }, { name:'ジャルプロスーパーハイドロ' }, { name:'オーロラ注射' }, { name:'リズネ' }, { name:'その他の薬剤（肌育注射）' },
+    { name:'プルリアルデンシファイ' }, { name:'ジャルプロスーパーハイドロ' }, { name:'オーロラ注射' }, { name:'その他の薬剤（肌育注射）' },
   ]},
   { name:'ショートスレッド' },
   { name:'脂肪溶解注射' },
@@ -191,7 +191,7 @@ async function sbDeleteCat(name){
 }
 
 // 廃止カテゴリ（サイドバーから除去・Supabaseからも削除）
-const REMOVE_CATS = new Set(['水光注射','ヴェルベットスキン','スーパーヴェルベットスキン','ビタミンスレッド','サーモンスレッド','オーダーメイドスレッド']);
+const REMOVE_CATS = new Set(['水光注射','ヴェルベットスキン','スーパーヴェルベットスキン','ビタミンスレッド','サーモンスレッド','オーダーメイドスレッド','リズネ']);
 
 // --- Supabase キャッシュ（mfdash_cache テーブル） ---
 async function sbCacheGet(clinicKey, year, month){
@@ -580,15 +580,15 @@ const CATEGORY_ALIAS = {
   'エクソソーム点滴':['エクソソーム点滴'],
   'NMN点滴':['NMN'],
   '白玉注射':['白玉'],
+  '疲労回復点滴':['疲労回復','疲労'],
   'ヒアルロン酸':['ヒアルロン'],
-  '肌育注射':['肌育','プロファイロ','水光','スキンブースター'],
+  '肌育注射':['肌育','プロファイロ','リズネ','水光','スキンブースター'],
   'スネコスパフォルマ':['スネコスパフォルマ','パフォルマ'],
   'リジュランi':['リジュランi','リジュランアイ'],
   'リジュランHB Plus':['リジュランHB','HBPlus'],
   'プルリアルデンシファイ':['プルリアル','デンシファイ'],
   'ジャルプロスーパーハイドロ':['ジャルプロ','スーパーハイドロ'],
   'オーロラ注射':['オーロラ'],
-  'リズネ':['リズネ'],
   'ショートスレッド':['ショートスレッド','スレッド','糸','ビタミンスレ','サーモン','オーダーメイドスレ'],
   '脂肪溶解注射':['脂肪溶解','脂肪','BNLS','カベリン','チンセラ','FatX','fatX','Fat X','fat X','FATX'],
   'HIFU':['HIFU','ハイフ','ウルトラフォーマー','ソノクイーン'],
@@ -1193,7 +1193,7 @@ async function migrateMergeCats(fromCats, toCat){
   try { await migrateMergeCats(['ヴェルベットスキン','スーパーヴェルベットスキン'], 'ダーマペン'); } catch(e){ console.error('ダーマペン統合失敗:', e.message); }
   try { await migrateMergeCats(['ビタミンスレッド','サーモンスレッド','オーダーメイドスレッド'], 'ショートスレッド'); } catch(e){ console.error('ショートスレッド統合失敗:', e.message); }
   try { await migrateKumaponMedia(); } catch(e){ console.error('くまぽん種別修正失敗:', e.message); }
-  try { await migrateNameToChild('肌育注射', 'リズネ', 'リズネ'); } catch(e){ console.error('リズネ移行失敗:', e.message); }
+  try { await migrateMergeCats(['リズネ'], '肌育注射'); } catch(e){ console.error('リズネ統合失敗:', e.message); }
   if (SB_ON) migrateCacheToSb().catch(e=>console.error('キャッシュ移行失敗:', e.message));
   server.listen(PORT, () => {
     const ok = CLINIC_LIST.filter(c=>process.env[c.key+'_CLIENT_ID']).map(c=>c.name);
