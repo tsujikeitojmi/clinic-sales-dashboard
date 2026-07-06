@@ -46,7 +46,7 @@ const EXCLUDED     = '除外';   // 集計合計には含めないが、確認�
 // 施術カテゴリ（グループ）初期一覧。data/categories.json で編集・追加できる
 const DEFAULT_CATEGORIES = [
   'ポテンツァ',
-  'CP-25','S-16','S-25','A1-15','ダイヤモンド',
+  'S-16','S-25','A1-15','ダイヤモンド',
   'BENEV','マックーム','リジュラン','ジュベルック','ボトックスアラガン',
   'エクソソーム','スネコス','デイリースペシャル(マックーム+エクソソーム)',
   'デイリープレミアム(ジュベルック+エクソソーム)','ACRS',
@@ -74,12 +74,10 @@ const DEFAULT_CATEGORIES = [
 // サイドバー用カテゴリ階層ツリー（表示・集計の親子関係のみ定義、振り分けは DEFAULT_CATEGORIES の葉名を使用）
 const CATEGORY_TREE = [
   { name:'ポテンツァ', children:[
-    { name:'CP-25', children:[
-      { name:'BENEV' }, { name:'マックーム' }, { name:'リジュラン' },
-      { name:'ジュベルック' }, { name:'ボトックスアラガン' }, { name:'エクソソーム' },
-      { name:'スネコス' }, { name:'デイリースペシャル(マックーム+エクソソーム)' },
-      { name:'デイリープレミアム(ジュベルック+エクソソーム)' }, { name:'ACRS' },
-    ]},
+    { name:'BENEV' }, { name:'マックーム' }, { name:'リジュラン' },
+    { name:'ジュベルック' }, { name:'ボトックスアラガン' }, { name:'エクソソーム' },
+    { name:'スネコス' }, { name:'デイリースペシャル(マックーム+エクソソーム)' },
+    { name:'デイリープレミアム(ジュベルック+エクソソーム)' }, { name:'ACRS' },
     { name:'S-16' }, { name:'S-25' }, { name:'A1-15' }, { name:'ダイヤモンド' },
   ]},
   { name:'フォトフェイシャル' },
@@ -192,7 +190,7 @@ async function sbDeleteCat(name){
 }
 
 // 廃止カテゴリ（サイドバーから除去・Supabaseからも削除）
-const REMOVE_CATS = new Set(['水光注射','ヴェルベットスキン','スーパーヴェルベットスキン','ビタミンスレッド','サーモンスレッド','オーダーメイドスレッド','リズネ']);
+const REMOVE_CATS = new Set(['水光注射','ヴェルベットスキン','スーパーヴェルベットスキン','ビタミンスレッド','サーモンスレッド','オーダーメイドスレッド','リズネ','CP-25']);
 
 // --- Supabase キャッシュ（mfdash_cache テーブル） ---
 async function sbCacheGet(clinicKey, year, month){
@@ -613,7 +611,6 @@ const CATEGORY_ALIAS = {
   'エクソソーム（ケアシス）':['エクソソーム','エクソ'],
   '物販':['《物販》','物販','物品販売','コスメ販売','スキンケア販売'],
   // ポテンツァ サブカテゴリ
-  'CP-25':['CP-25','CP25'],
   'S-16':['S-16','S16'],
   'S-25':['S-25','S25'],
   'A1-15':['A1-15','A115','A1'],
@@ -1196,6 +1193,7 @@ async function migrateMergeCats(fromCats, toCat){
   try { await migrateMergeCats(['ビタミンスレッド','サーモンスレッド','オーダーメイドスレッド'], 'ショートスレッド'); } catch(e){ console.error('ショートスレッド統合失敗:', e.message); }
   try { await migrateKumaponMedia(); } catch(e){ console.error('くまぽん種別修正失敗:', e.message); }
   try { await migrateMergeCats(['リズネ'], '肌育注射'); } catch(e){ console.error('リズネ統合失敗:', e.message); }
+  try { await migrateMergeCats(['CP-25'], 'ポテンツァ'); } catch(e){ console.error('CP-25統合失敗:', e.message); }
   if (SB_ON) migrateCacheToSb().catch(e=>console.error('キャッシュ移行失敗:', e.message));
   server.listen(PORT, () => {
     const ok = CLINIC_LIST.filter(c=>process.env[c.key+'_CLIENT_ID']).map(c=>c.name);
