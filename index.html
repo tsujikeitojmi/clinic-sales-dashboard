@@ -90,6 +90,7 @@
     .chart-wrap{position:relative;height:300px}
 
     .rank{display:flex;flex-direction:column;gap:9px}
+    .rank-lbl{font-size:12px;color:var(--sub);font-weight:600;margin-bottom:8px}
     .rank .it{display:flex;align-items:center;gap:10px}
     .rank .it .no{width:20px;color:var(--sub);text-align:right;font-variant-numeric:tabular-nums;font-weight:600}
     .rank .it .nm{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
@@ -333,11 +334,10 @@
       </div>
       <div class="panel">
         <h3>ランキング</h3>
-        <div class="tabsmini" id="rankTabs">
-          <button data-k="sales" class="on" onclick="switchRank('sales')">粗利(売上) TOP</button>
-          <button data-k="count" onclick="switchRank('count')">人数 TOP</button>
-        </div>
-        <div class="rank" id="rank"></div>
+        <div class="rank-lbl">粗利(売上) TOP</div>
+        <div class="rank" id="rankSales"></div>
+        <div class="rank-lbl" style="margin-top:16px">人数 TOP</div>
+        <div class="rank" id="rankCount"></div>
       </div>
     </div>
 
@@ -465,7 +465,6 @@ let curClinic = null;
 let curCat = null;        // 選択中カテゴリ（null=全体）
 let curSubCat = null;     // 選択中サブカテゴリ（null=親全体）
 let curSubCat2 = null;    // 選択中孫カテゴリ（例：CP-25の薬剤）
-let rankKey = 'sales';
 let chart = null;
 let PENDING = null;
 let TREE_MAP = {};
@@ -1112,27 +1111,24 @@ function copyMonthlyTable(){
 }
 
 /* ====== ランキング ====== */
-function switchRank(k){
-  rankKey=k;
-  document.querySelectorAll('#rankTabs button').forEach(b=>b.classList.toggle('on', b.dataset.k===k));
-  renderRank();
-}
 function renderRank(){
   // 親施術（ルートカテゴリ）に集約してランキング（★未分類・除外は除く）
   const agg = catsByRoot().filter(c=>c.category!=='★未分類' && c.category!=='除外');
-  const key = rankKey==='sales' ? 'sales' : 'ppl';   // 件数タブは延べ人数で
-  const list = agg.slice().sort((a,b)=>b[key]-a[key]).slice(0,10)
-    .map(c=>({label:c.category, value:c[key]}));
-  const max = list.reduce((m,x)=>Math.max(m,x.value),0) || 1;
-  const fmt = rankKey==='sales' ? yen : (v=>num(v)+' 人');
-  document.getElementById('rank').innerHTML = list.map((x,i)=>`
-    <div class="it">
-      <span class="no">${i+1}</span>
-      <span class="nm">${esc(displayCat(x.label))}</span>
-      <span class="bar" style="width:${Math.max(3,(x.value/max)*120)}px;
-        background:${i===0?'#b76e79':'#d6a7af'}"></span>
-      <span class="vl">${fmt(x.value)}</span>
-    </div>`).join('') || '<div class="muted">データなし</div>';
+  const draw = (elId, key, fmt)=>{
+    const list = agg.slice().sort((a,b)=>b[key]-a[key]).slice(0,10)
+      .map(c=>({label:c.category, value:c[key]}));
+    const max = list.reduce((m,x)=>Math.max(m,x.value),0) || 1;
+    document.getElementById(elId).innerHTML = list.map((x,i)=>`
+      <div class="it">
+        <span class="no">${i+1}</span>
+        <span class="nm">${esc(displayCat(x.label))}</span>
+        <span class="bar" style="width:${Math.max(3,(x.value/max)*120)}px;
+          background:${i===0?'#b76e79':'#d6a7af'}"></span>
+        <span class="vl">${fmt(x.value)}</span>
+      </div>`).join('') || '<div class="muted">データなし</div>';
+  };
+  draw('rankSales', 'sales', yen);                 // 粗利(売上) TOP
+  draw('rankCount', 'ppl', v=>num(v)+' 人');        // 人数 TOP（延べ人数）
 }
 
 /* ====== カテゴリ別テーブル ====== */
