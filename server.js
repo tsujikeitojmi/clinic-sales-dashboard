@@ -65,6 +65,7 @@ const DEFAULT_CATEGORIES = [
   '脂肪溶解注射','HIFU','ルメッカ',
   'インモード','MiniFX','Forma','Vリフト',
   'ダーマペン',
+  'サブシジョン',
   'ピーリング','マッサージピール','ミラノピール','ララドクター','その他のピーリング',
   'リバースピール','サリチル酸ピール',
   'ハイドラ','ケアシス','レナトスTa+','ペップビュー','エクソソーム（ケアシス）','その他の薬剤',
@@ -108,6 +109,7 @@ const CATEGORY_TREE = [
     { name:'MiniFX' }, { name:'Forma' }, { name:'Vリフト' },
   ]},
   { name:'ダーマペン' },
+  { name:'サブシジョン' },
   { name:'ピーリング', children:[
     { name:'マッサージピール' }, { name:'ミラノピール' }, { name:'ララドクター' }, { name:'その他のピーリング' },
     { name:'リバースピール' }, { name:'サリチル酸ピール' },
@@ -127,6 +129,11 @@ function collectParentNames(nodes, out=new Set()){
 const PARENT_CAT_NAMES = collectParentNames(CATEGORY_TREE);
 // 振り分けUIに表示するのはルート（最上位）カテゴリのみ
 const ROOT_CAT_NAMES = new Set(CATEGORY_TREE.map(n=>n.name));
+
+// カテゴリの院スコープ：指定した院でのみ表示・振り分け可能にする。未指定カテゴリは全院共通。
+const CATEGORY_CLINICS = {
+  'サブシジョン': ['CLINIC3'],   // サブシジョンは福岡のみ
+};
 
 /* ====================== .env 読み込み（依存なし簡易パーサ） ====================== */
 function loadEnv(){
@@ -423,40 +430,6 @@ function countVisits(values){
   return n;
 }
 
-/* ====================== 公式画面(medical-force)準拠の集計 ======================
-   medical-force の公式集計画面と同じ「個数・消化回数・人数・売上」を kind 別に出す。
-   心斎橋2026/6で全行一致を確認（物品売上のみ丸めで±数円）。金額ロジックには一切影響しない。
-     個数     = 消化でない明細の数量(quantity)合計（単発＋コース契約）
-     消化回数 = 消化(courseDigestion>0)の明細の数量合計
-     人数     = その行(kind)の明細を持つユニーク患者数(visitorId)
-     売上     = 消化計上（契約は除外、消化 or 単品の実額）＝金額と同一 */
-const OFFICIAL_ROWS = ['施術','薬剤','物品','その他'];
-function officialRowOf(kind){ return (kind==='施術'||kind==='薬剤'||kind==='物品') ? kind : 'その他'; }
-function aggregateByKind(values){
-  const R = {}; OFFICIAL_ROWS.forEach(k=>{ R[k]={kind:k, kosuu:0, shouka:0, sales:0, _ppl:new Set()}; });
-  (values||[]).forEach(v=>{
-    const vis = v.visitorId || null;
-    (v.paymentItems||[]).forEach(it=>{
-      const row = officialRowOf(it.kind);
-      const g = R[row];
-      const qty      = Number(it.quantity)||0;
-      const contract = Number(it.courseContractAmountWithTax)||0;
-      const digest   = Number(it.courseDigestionAmountWithTax)||0;
-      const genuine  = Number(it.genuinePriceWithTax)||0;
-      // 個数・消化回数は 施術/薬剤/物品 のみ数える（その他＝前受金・返金・調整は公式でも個数0）
-      if (row !== 'その他'){ if (digest>0) g.shouka += qty; else g.kosuu += qty; }
-      // 売上は全行で消化計上（金額ロジックと同一・一切変更しない）
-      g.sales += contract>0 ? 0 : (digest>0 ? Math.floor(digest) : Math.floor(genuine));
-      // 人数：施術/薬剤/物品は「価格フィールド(genuinePriceWithTax)のある行」のみ数える
-      //   （セット構成品などの未価格行は公式でも人数に数えない。¥0の無料施術は価格0で数える）。
-      //   その他は kind が空欄(前受金の内訳等)を除外。→ 3院で公式画面と完全一致を確認。
-      const person = (row === 'その他') ? !!it.kind : (it.genuinePriceWithTax !== undefined);
-      if (vis && person) g._ppl.add(vis);
-    });
-  });
-  return OFFICIAL_ROWS.map(k=>({ kind:k, kosuu:R[k].kosuu, shouka:R[k].shouka, ninzuu:R[k]._ppl.size, sales:R[k].sales }));
-}
-
 /* 施術(optionId)単位の内訳。カテゴリ別ダッシュボードの「中身」表示用（集計コアは変更せず読み取りのみ）。
    ・売上 = 同じルール（契約 or 単発genuine、消化除外）の合算 → 合計はカテゴリ売上と一致
    ・件数 = その施術を受けた「人数」＝ユニーク患者数(visitorId)。公式画面の各施術「人数」と一致。
@@ -527,11 +500,6 @@ function slimValues(values){
     }))
   }));
 }
-// 公式集計に必要な項目(kind/quantity/visitorId)が入った新しいキャッシュか判定（古い月は要再取得）
-function isEnriched(values){
-  return Array.isArray(values) && values.length>0 &&
-    values.some(v=> v && Object.prototype.hasOwnProperty.call(v,'visitorId'));
-}
 async function writeRaw(clinicKey, year, month, valuesRaw){
   const values = slimValues(valuesRaw);   // 軽量化して保存
   const fetchedAt = new Date().toISOString();
@@ -561,7 +529,7 @@ const CP_KW    = ['キャンペーン','ゲリラ','フェア','感謝祭','ス�
 
 // 各カテゴリにマッチさせる別名キーワード（表記揺れ対策）。施術名/APIカテゴリに含まれたら近いと判定。
 const CATEGORY_ALIAS = {
-  'ポテンツァ':['ポテンツァ','POTENZA'],
+  'ポテンツァ':['ポテンツァ','POTENZA','CP-25','CP25','ポテ'],   // CP-25/ポテ短縮も拾う（子薬剤を正しくポテンツァ配下へ）
   'フォトフェイシャル':['フォトフェイシャル','フォトフェイス','フォト','IPL','ステラ','M22'],
   'ツヤ肌セット':['ツヤ肌','ツヤセット'],
   'アクネフォト':['アクネフォト','アクネ'],
@@ -656,8 +624,13 @@ function buildNodeInfo(nodes, par, out){
 }
 const NODE_INFO = buildNodeInfo(CATEGORY_TREE, null, {});
 const ALL_NODES = Object.keys(NODE_INFO);
+// 表記ゆれ吸収：全角→半角(NFKC)、各種ハイフン/ダッシュを "-" に統一、小文字化。
+// 例: "Ｓ－２５" "S‐25"(U+2010) "s25" → いずれも "s-25"/"s25" として一致できる。※長音ー(U+30FC)は語の一部なので変換しない。
+function norm(s){
+  return String(s||'').normalize('NFKC').replace(/[‐-―−]/g, '-').toLowerCase();
+}
 // このノード名の別名が施術名に含まれれば、一番長い一致の文字数（具体的なほど高い）
-function ownScore(text, name){ let s=0; for (const kw of aliasesOf(name)){ if (kw && text.indexOf(kw)>=0) s=Math.max(s,kw.length); } return s; }
+function ownScore(text, name){ const T=norm(text); let s=0; for (const kw of aliasesOf(name)){ const k=norm(kw); if (k && T.indexOf(k)>=0) s=Math.max(s,k.length); } return s; }
 // ルート→葉の「おすすめパス」。自ノード＋先祖の一致を合算し、親の言葉も当たるパスを優先（例:ハイコックス系）。
 // セット施術の「主メニュー」優先度。強い順。ここに無いカテゴリは中間、付け合わせは最弱。
 const CATEGORY_PRIORITY = ['ポテンツァ','ピコレーザー','ハイコックス','フォトフェイシャル','アクネフォト','ボトックス'];
@@ -667,7 +640,7 @@ function rootOf(n){ let r=n; while(NODE_INFO[r] && NODE_INFO[r].parent) r=NODE_I
 // 加点はスコアに乗せるので、セットでは強い方に寄りつつ、単独の具体的一致（例:アクネフォト）は壊さない。
 function highBonus(root){ const i = CATEGORY_PRIORITY.indexOf(root); return i>=0 ? (CATEGORY_PRIORITY.length - i) : 0; }
 // そのノードに当たった一番長い別名（文字列）。部分一致判定に使う。
-function ownMatch(text, name){ let best=''; for (const kw of aliasesOf(name)){ if (kw && text.indexOf(kw)>=0 && kw.length>best.length) best=kw; } return best; }
+function ownMatch(text, name){ const T=norm(text); let best=''; for (const kw of aliasesOf(name)){ const k=norm(kw); if (k && T.indexOf(k)>=0 && k.length>best.length) best=k; } return best; }
 
 function suggestBestPath(name, apiCat){
   const text = String(name||'') + ' ' + String(apiCat||'');
@@ -705,11 +678,12 @@ function suggestType(text){
 //  ordered : 近い順に並べたカテゴリ配列（マッチ無しは元の並びを維持して後ろ）
 //  best    : おすすめ（マッチが1つでもあればそのカテゴリ、無ければ ''）
 function rankCategories(name, apiCat, cats){
-  const text = String(name||'') + ' ' + String(apiCat||'');
+  const T = norm(String(name||'') + ' ' + String(apiCat||''));
   const scored = cats.map((cat,i)=>{
     let score = 0;
     for (const kw of aliasesOf(cat)){
-      if (kw && text.indexOf(kw) >= 0) score = Math.max(score, kw.length); // 長い一致ほど具体的＝高スコア
+      const k = norm(kw);
+      if (k && T.indexOf(k) >= 0) score = Math.max(score, k.length); // 長い一致ほど具体的＝高スコア
     }
     return { cat, score, i };
   });
@@ -725,6 +699,7 @@ function getConfig(){
     clinics: CLINIC_LIST.map(c=>({key:c.key, name:c.name, color:c.color})),
     categories: readCategories().filter(c=>ROOT_CAT_NAMES.has(c)),
     categoryTree: CATEGORY_TREE,
+    categoryClinics: CATEGORY_CLINICS,   // カテゴリの院スコープ（未指定は全院）
     types: TYPES_NEW,
     year:  today.getFullYear(),
     month: today.getMonth()+1,
@@ -824,7 +799,6 @@ async function getDashboard(clinicKey, year, month, refresh){
       visitCount: countVisits(values) },   // 来院数（会計数）。金額・施術数はそのまま。
     categories,
     items: aggregateItems(values, masterMap),  // 施術(optionId)単位の内訳
-    official: { rows: aggregateByKind(values), enriched: isEnriched(values) },  // 公式画面準拠（個数/消化回数/人数）
     monthly: await buildMonthlyTrend(clinicKey, year, month, byCat),
     rankings,
     pendingCount: byCat[UNCLASSIFIED] ? byCat[UNCLASSIFIED].count : 0,
