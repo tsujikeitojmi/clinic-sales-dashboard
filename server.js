@@ -50,8 +50,8 @@ const DEFAULT_CATEGORIES = [
   'BENEV','マックーム','リジュラン','ジュベルック','ボトックスアラガン',
   'エクソソーム','スネコス','デイリースペシャル(マックーム+エクソソーム)',
   'デイリープレミアム(ジュベルック+エクソソーム)','ACRS',
-  'フォトフェイシャル','ツヤ肌セット',
-  'アクネフォト','ニキビ撃退セット',
+  'フォトフェイシャル',
+  'アクネフォト',
   '脱毛',
   'ピコレーザー','ピコスポット','ピコトーニング','ピコフラクショナル','ピコダブル',
   'デンシティ',
@@ -198,7 +198,7 @@ async function sbDeleteCat(name){
 }
 
 // 廃止カテゴリ（サイドバーから除去・Supabaseからも削除）
-const REMOVE_CATS = new Set(['水光注射','ヴェルベットスキン','スーパーヴェルベットスキン','ビタミンスレッド','サーモンスレッド','オーダーメイドスレッド','リズネ','CP-25']);
+const REMOVE_CATS = new Set(['水光注射','ヴェルベットスキン','スーパーヴェルベットスキン','ビタミンスレッド','サーモンスレッド','オーダーメイドスレッド','リズネ','CP-25','ツヤ肌セット','ニキビ撃退セット']);
 
 // --- Supabase キャッシュ（mfdash_cache テーブル） ---
 async function sbCacheGet(clinicKey, year, month){
@@ -532,9 +532,7 @@ const CP_KW    = ['キャンペーン','ゲリラ','フェア','感謝祭','ス�
 const CATEGORY_ALIAS = {
   'ポテンツァ':['ポテンツァ','POTENZA','CP-25','CP25','ポテ'],   // CP-25/ポテ短縮も拾う（子薬剤を正しくポテンツァ配下へ）
   'フォトフェイシャル':['フォトフェイシャル','フォトフェイス','フォト','IPL','ステラ','M22'],
-  'ツヤ肌セット':['ツヤ肌','ツヤセット'],
   'アクネフォト':['アクネフォト','アクネ'],
-  'ニキビ撃退セット':['ニキビ撃退','ニキビセット'],
   '脱毛':['脱毛'],
   'ピコレーザー':['ピコレーザー','ピコ'],
   'ピコスポット':['ピコスポット','ピコS','スポット','シミ取り','シミ'],
@@ -1163,6 +1161,20 @@ async function migrateNameToChild(parentCat, nameKw, childCat){
   console.log('  → '+parentCat+'内の「'+nameKw+'」を'+childCat+'へ:', changed.length, '件');
 }
 
+// 廃止カテゴリに入っている施術を未分類へ戻す（マスタから割り当てを外す）。起動時・冪等。
+async function migrateUnassignCats(cats){
+  const set = new Set(cats);
+  const changed = [];
+  MASTER_ROWS.forEach(r=>{
+    if (set.has(String(r.category||'').trim())){ r.category = UNCLASSIFIED; changed.push(r); }
+  });
+  if (!changed.length) return;
+  if (SB_ON){ try { await sbUpsert('mfdash_master', changed.map(toSbMaster)); } catch(e){ console.error('未分類戻し SB書込失敗:', e.message); } }
+  localWriteMaster(MASTER_ROWS);
+  masterListInvalidAt = Date.now();   // マスタ画面キャッシュを無効化
+  console.log('  → 未分類へ戻す:', cats.join('/'), changed.length, '件');
+}
+
 // 廃止した子カテゴリを親へ統合（例: ヴェルベットスキン等 → ダーマペン）。起動時・冪等。
 async function migrateMergeCats(fromCats, toCat){
   const from = new Set(fromCats);
@@ -1185,6 +1197,7 @@ async function migrateMergeCats(fromCats, toCat){
   try { await migrateKumaponMedia(); } catch(e){ console.error('くまぽん種別修正失敗:', e.message); }
   try { await migrateMergeCats(['リズネ'], '肌育注射'); } catch(e){ console.error('リズネ統合失敗:', e.message); }
   try { await migrateMergeCats(['CP-25'], 'ポテンツァ'); } catch(e){ console.error('CP-25統合失敗:', e.message); }
+  try { await migrateUnassignCats(['ツヤ肌セット','ニキビ撃退セット']); } catch(e){ console.error('セット系未分類戻し失敗:', e.message); }
   if (SB_ON) migrateCacheToSb().catch(e=>console.error('キャッシュ移行失敗:', e.message));
   server.listen(PORT, () => {
     const ok = CLINIC_LIST.filter(c=>process.env[c.key+'_CLIENT_ID']).map(c=>c.name);
