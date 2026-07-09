@@ -767,7 +767,8 @@ async function getDashboard(clinicKey, year, month, refresh){
   // 既定はキャッシュ優先（=速い）。refresh=true のときだけAPI再取得。
   const { values, cached, fetchedAt } = await getValues(clinicKey, year, month, refresh);
   const masterMap = loadMasterMap();
-  const byCat = aggregateClinic(values, masterMap, null);
+  const pend = {};   // 振り分け可能な未分類（optionId有り・売上≠0）だけを集める
+  const byCat = aggregateClinic(values, masterMap, pend);
   const categories = Object.keys(byCat).map(cat=>({
     category:cat, sales:byCat[cat].sales, count:byCat[cat].count,
     通常:byCat[cat]['通常'], CP:byCat[cat]['CP'], 媒体:byCat[cat]['媒体'],
@@ -801,7 +802,7 @@ async function getDashboard(clinicKey, year, month, refresh){
     items: aggregateItems(values, masterMap),  // 施術(optionId)単位の内訳
     monthly: await buildMonthlyTrend(clinicKey, year, month, byCat),
     rankings,
-    pendingCount: byCat[UNCLASSIFIED] ? byCat[UNCLASSIFIED].count : 0,
+    pendingCount: Object.keys(pend).length,   // 実際に振り分けできる未分類の件数（キャンセル料・払戻金などoptionId無しは除く）
   };
 }
 

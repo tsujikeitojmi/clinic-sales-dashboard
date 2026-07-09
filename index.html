@@ -590,6 +590,7 @@ function render(){
   document.getElementById('title').textContent =
     `${DATA.clinic}　${DATA.year}年${DATA.month}月`;
   document.getElementById('pendingCount').textContent = num(DATA.pendingCount);
+  document.getElementById('pendingBtn').style.display = DATA.pendingCount>0 ? '' : 'none';  // 振り分け対象が無ければ非表示
   updateFreshness();
   renderCards2();   // カテゴリ選択中はその施術のカード、未選択なら全体（renderCards）にフォールバック
   buildAccordion();
@@ -834,9 +835,8 @@ function buildAccordion(){
             data-cat="${esc(x.category)}" onclick="selectCat(this.dataset.cat)">
             <span class="nm">${esc(displayCat(x.category))}</span>${vlc(x.sales, pmap[x.category]||0)}</div>`);
       });
-      if (map['★未分類']) rows.push(`<div class="row unc ${curCat==='★未分類'?'on':''}"
-          data-cat="★未分類" onclick="selectCat(this.dataset.cat)">
-          <span class="nm">★未分類</span>${vlc(map['★未分類'].sales, pmap['★未分類']||0)}</div>`);
+      // ★未分類はカテゴリではなく「未振り分けの状態」なので、サイドバーのタブには出さない
+      //（振り分けが必要な施術は「未分類を振り分け」ボタンから確認・処理する）
       // 除外（合計には入らない）。中身を確認して誤りを修正できるよう、専用行として末尾に表示
       if (map['除外']) rows.push(`<div class="row excl ${curCat==='除外'?'on':''}"
           data-cat="除外" onclick="selectCat(this.dataset.cat)" title="集計には含まれません。誤って除外した施術を確認・修正できます">
@@ -1237,6 +1237,7 @@ async function runAutoAssignBg(){
       const d = await api('/api/dashboard', {clinic:curClinic, year:y, month:m});
       DATA = d;
       document.getElementById('pendingCount').textContent = num(DATA.pendingCount);
+      document.getElementById('pendingBtn').style.display = DATA.pendingCount>0 ? '' : 'none';
       buildAccordion();
     }
   } catch(e){ /* サイレント */ }
