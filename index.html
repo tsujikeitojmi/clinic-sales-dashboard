@@ -1112,8 +1112,8 @@ function copyMonthlyTable(){
 
 /* ====== ランキング ====== */
 function renderRank(){
-  // 親施術（ルートカテゴリ）に集約してランキング（★未分類・除外は除く）
-  const agg = catsByRoot().filter(c=>c.category!=='★未分類' && c.category!=='除外');
+  // 親施術（ルートカテゴリ）に集約してランキング（★未分類・除外・物販は除く）
+  const agg = catsByRoot().filter(c=>c.category!=='★未分類' && c.category!=='除外' && c.category!=='物販');
   const draw = (elId, key, fmt)=>{
     const list = agg.slice().sort((a,b)=>b[key]-a[key]).slice(0,10)
       .map(c=>({label:c.category, value:c[key]}));
