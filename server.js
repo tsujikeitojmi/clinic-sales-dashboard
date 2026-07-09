@@ -506,6 +506,7 @@ async function writeRaw(clinicKey, year, month, valuesRaw){
   fs.writeFileSync(cacheFile(clinicKey, year, month), JSON.stringify({ fetchedAt, values }), 'utf8');
   sbCacheUpsert(clinicKey, year, month, fetchedAt, values); // Supabaseへも保存（待たない）
   trendCacheInvalidAt = Date.now(); // 月別トレンドキャッシュを無効化
+  masterListInvalidAt = Date.now(); // マスタ画面キャッシュも無効化（施術一覧が増える可能性）
 }
 function cacheExists(clinicKey, year, month){ return fs.existsSync(cacheFile(clinicKey, year, month)); }
 
@@ -723,6 +724,11 @@ function sumByCat(byCat){
 const trendCache = new Map();
 let trendCacheInvalidAt = 0;
 
+// マスタ画面（全月走査＋おすすめ計算）の重い部分を院ごとにキャッシュ。生データ更新時のみ作り直す。
+// 振り分け（カテゴリ・種別）は毎回最新のmasterMapで反映するので、割り当て変更は即座に出る。
+const masterListCache = new Map();   // clinicKey -> { byOpt, months, ts }
+let masterListInvalidAt = 0;
+
 async function buildMonthlyTrend(clinicKey, year, month, currentByCat){
   const cacheKey = `${clinicKey}_${year}_${month}`;
   const cached = trendCache.get(cacheKey);
@@ -905,32 +911,39 @@ async function getPending(clinicKey, year, month, scope){
    現在の振り分け（カテゴリ・種別）を付けて返す。未分類も含む。金額は出さない（軽量）。 */
 async function getMasterList(clinicKey){
   const masterMap = loadMasterMap();
-  const byOpt = {};
-  const months = await listCachedMonths(clinicKey);
-  for (const {year:y, month:m} of months){
-    const raw = await readRaw(clinicKey, y, m);
-    if (!raw) continue;
-    raw.forEach(v=>(v.paymentItems||[]).forEach(it=>{
-      const opt = String(it.optionId||'').trim();
-      if (!opt || byOpt[opt]) return;
-      // aggregateClinic と同じく sales=0 のアイテムは除外（回数券消化など0円アイテムは集計対象外）
-      const digest = Math.floor(+(it.courseDigestionAmountWithTax)||0);
-      const genuine = Math.floor(+(it.genuinePriceWithTax)||0);
-      if (digest === 0 && genuine === 0) return;
-      byOpt[opt] = { optionId:opt, name:it.name||'', apiCat:it.category||'' };
-    }));
+  // 重い部分（全月走査で施術一覧を作り、おすすめパスを計算）はキャッシュ。生データ更新時のみ作り直す。
+  let entry = masterListCache.get(clinicKey);
+  if (!entry || entry.ts < masterListInvalidAt){
+    const byOpt = {};
+    const months = await listCachedMonths(clinicKey);
+    for (const {year:y, month:m} of months){
+      const raw = await readRaw(clinicKey, y, m);
+      if (!raw) continue;
+      raw.forEach(v=>(v.paymentItems||[]).forEach(it=>{
+        const opt = String(it.optionId||'').trim();
+        if (!opt || byOpt[opt]) return;
+        // aggregateClinic と同じく sales=0 のアイテムは除外（回数券消化など0円アイテムは集計対象外）
+        const digest = Math.floor(+(it.courseDigestionAmountWithTax)||0);
+        const genuine = Math.floor(+(it.genuinePriceWithTax)||0);
+        if (digest === 0 && genuine === 0) return;
+        const name = it.name||'', apiCat = it.category||'';
+        byOpt[opt] = { optionId:opt, name, apiCat, suggestPath: suggestBestPath(name, apiCat) };
+      }));
+    }
+    entry = { byOpt, months: months.length, ts: Date.now() };
+    masterListCache.set(clinicKey, entry);
   }
-  const rows = Object.values(byOpt).map(o=>{
+  // 振り分け（カテゴリ・種別）は毎回最新のmasterMapで反映 → 割り当て変更は即座に出る
+  const rows = Object.values(entry.byOpt).map(o=>{
     const m = masterMap[o.optionId];
-    const path = suggestBestPath(o.name, o.apiCat);
     return { optionId:o.optionId, name:o.name, apiCat:o.apiCat,
       category: m ? m.category : UNCLASSIFIED,
       type:     m ? m.type : suggestType(o.name+' '+o.apiCat),
-      suggestPath: path,
-      suggestCategory: path.length ? path[path.length-1] : '' };   // おすすめ（葉まで）
+      suggestPath: o.suggestPath,
+      suggestCategory: o.suggestPath.length ? o.suggestPath[o.suggestPath.length-1] : '' };   // おすすめ（葉まで）
   }).sort((a,b)=> String(a.name).localeCompare(String(b.name),'ja'));
   return { clinic: getClinic(clinicKey).name, clinicKey, rows,
-    categoryTree: CATEGORY_TREE, types: TYPES_NEW, monthsScanned: months.length };
+    categoryTree: CATEGORY_TREE, types: TYPES_NEW, monthsScanned: entry.months };
 }
 
 async function assignMaster(assignments){
