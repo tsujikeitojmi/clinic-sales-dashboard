@@ -250,6 +250,9 @@
     .sum-tbl th.col-n{color:var(--normal)}
     .sum-tbl th.col-cp{color:var(--cp)}
     .sum-tbl th.col-m{color:var(--media)}
+    #catTable .col-n{color:var(--normal)}
+    #catTable .col-cp{color:var(--cp)}
+    #catTable .col-m{color:var(--media)}
     .sum-tbl tfoot td{font-weight:700;border-top:2px solid var(--line);border-bottom:none}
     .copy-btn{all:unset;cursor:pointer;font-size:12px;padding:6px 14px;border-radius:20px;
       border:1px solid var(--line);background:var(--panel);color:var(--sub);transition:background .12s}
@@ -327,7 +330,10 @@
         </div>
         <table id="catTable">
           <thead>
-            <tr><th>カテゴリ</th><th>売上</th><th>人数</th><th>通常</th><th>CP</th><th>媒体</th></tr>
+            <tr><th>カテゴリ</th><th>売上</th><th>人数</th>
+              <th class="col-n">通常売上</th><th class="col-n">通常人数</th>
+              <th class="col-cp">CP売上</th><th class="col-cp">CP人数</th>
+              <th class="col-m">媒体売上</th><th class="col-m">媒体人数</th></tr>
           </thead>
           <tbody></tbody>
         </table>
@@ -1134,16 +1140,19 @@ function renderRank(){
 /* ====== カテゴリ別テーブル ====== */
 /* DATA.categories を親施術（ルートカテゴリ）ごとに集約（子カテゴリの数値を親に合算） */
 function catsByRoot(){
-  const pmap = pplByCatMap();   // 延べ人数（施術内訳ベース）をカテゴリ別に
   const roots = new Map();
-  const ensure = root=>{ let r=roots.get(root); if(!r){ r={category:root, sales:0, count:0, ppl:0, 通常:0, CP:0, 媒体:0}; roots.set(root,r);} return r; };
+  const ensure = root=>{ let r=roots.get(root); if(!r){ r={category:root, sales:0, count:0, ppl:0, ppl_通常:0, ppl_CP:0, ppl_媒体:0, 通常:0, CP:0, 媒体:0}; roots.set(root,r);} return r; };
   (DATA.categories||[]).forEach(c=>{
     const r = ensure(getRootCat(c.category));
     r.sales += c.sales||0; r.count += c.count||0;
     r.通常 += c['通常']||0; r.CP += c.CP||0; r.媒体 += c.媒体||0;
   });
-  // 延べ人数は施術内訳(items)のカテゴリ→ルートで合算
-  Object.keys(pmap).forEach(cat=>{ ensure(getRootCat(cat)).ppl += pmap[cat]; });
+  // 延べ人数は施術内訳(items)を種別ごとにカテゴリ→ルートで合算
+  (DATA.items||[]).forEach(x=>{
+    const r = ensure(getRootCat(x.category));
+    const n = x.count||0, t = (x.type==='CP'||x.type==='媒体') ? x.type : '通常';
+    r.ppl += n; r['ppl_'+t] += n;
+  });
   return [...roots.values()];
 }
 
@@ -1160,14 +1169,16 @@ function renderCatTable(){
   tb.innerHTML = catTableData.map(c=>`
     <tr class="${c.category==='★未分類'?'unc':''}">
       <td>${esc(displayCat(c.category))}</td><td>${yen(c.sales)}</td><td>${num(c.ppl)}</td>
-      <td>${yen(c.通常)}</td><td>${yen(c.CP)}</td><td>${yen(c.媒体)}</td>
+      <td class="col-n">${yen(c.通常)}</td><td class="col-n">${num(c.ppl_通常)}</td>
+      <td class="col-cp">${yen(c.CP)}</td><td class="col-cp">${num(c.ppl_CP)}</td>
+      <td class="col-m">${yen(c.媒体)}</td><td class="col-m">${num(c.ppl_媒体)}</td>
     </tr>`).join('');
 }
 
 function copyCatTable(){
-  const header = ['カテゴリ','売上','人数','通常','CP','媒体'].join('\t');
+  const header = ['カテゴリ','売上','人数','通常売上','通常人数','CP売上','CP人数','媒体売上','媒体人数'].join('\t');
   const rows = (catTableData||[]).map(c=>[
-    displayCat(c.category), c.sales, c.ppl, c.通常, c.CP, c.媒体,
+    displayCat(c.category), c.sales, c.ppl, c.通常, c.ppl_通常, c.CP, c.ppl_CP, c.媒体, c.ppl_媒体,
   ].join('\t'));
   navigator.clipboard.writeText([header,...rows].join('\n')).then(()=>{
     const btn = document.getElementById('copyCatBtn');
