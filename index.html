@@ -922,7 +922,8 @@ function selectSubCat2(cat){
 function toggleDetailPanels(){
   const hide = curCat ? 'none' : '';
   document.querySelector('.grid2').style.display = hide;
-  document.getElementById('monthlyPanel').style.display = hide;
+  // 月別サマリーは常に表示（カテゴリ選択中はそのカテゴリの件数・金額）
+  document.getElementById('monthlyPanel').style.display = '';
   // 施術内訳はカテゴリ選択中のみ表示（全体タブでは非表示）
   document.getElementById('itemsPanel').style.display = curCat ? '' : 'none';
 }
