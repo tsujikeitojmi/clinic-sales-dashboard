@@ -58,7 +58,6 @@ const DEFAULT_CATEGORIES = [
   'ハイコックス','スキンボトックス','ジュベリジュ','スノーフラワーブルーム','その他の薬剤（ハイコックス）',
   'リジュラン（ハイコックス）','ジュベルック（ハイコックス）','スネコス（ハイコックス）','エクソソーム（ハイコックス）','ACRS（ハイコックス）',
   'ボトックス','ヒアルロン酸',
-  '美容点滴・注射','高濃度ビタミンC点滴','エクソソーム点滴','NMN点滴','白玉注射','疲労回復点滴',
   '肌育注射','スネコスパフォルマ','リジュランi','リジュランHB Plus',
   'プルリアルデンシファイ','ジャルプロスーパーハイドロ','オーロラ注射','ジュベルック（肌育注射）','リズネ','その他の薬剤（肌育注射）',
   'ショートスレッド',
@@ -95,9 +94,6 @@ const CATEGORY_TREE = [
     { name:'スノーフラワーブルーム' }, { name:'その他の薬剤（ハイコックス）' },
   ]},
   { name:'ボトックス' }, { name:'ヒアルロン酸' },
-  { name:'美容点滴・注射', children:[
-    { name:'高濃度ビタミンC点滴' }, { name:'エクソソーム点滴' }, { name:'NMN点滴' }, { name:'白玉注射' }, { name:'疲労回復点滴' },
-  ]},
   { name:'肌育注射', children:[
     { name:'スネコスパフォルマ' }, { name:'リジュランi' }, { name:'リジュランHB Plus' },
     { name:'プルリアルデンシファイ' }, { name:'ジャルプロスーパーハイドロ' }, { name:'オーロラ注射' },
@@ -199,7 +195,7 @@ async function sbDeleteCat(name){
 }
 
 // 廃止カテゴリ（サイドバーから除去・Supabaseからも削除）
-const REMOVE_CATS = new Set(['水光注射','ヴェルベットスキン','スーパーヴェルベットスキン','ビタミンスレッド','サーモンスレッド','オーダーメイドスレッド','CP-25','ツヤ肌セット','ニキビ撃退セット']);
+const REMOVE_CATS = new Set(['水光注射','ヴェルベットスキン','スーパーヴェルベットスキン','ビタミンスレッド','サーモンスレッド','オーダーメイドスレッド','CP-25','ツヤ肌セット','ニキビ撃退セット','美容点滴・注射','高濃度ビタミンC点滴','エクソソーム点滴','NMN点滴','白玉注射','疲労回復点滴']);
 
 // --- Supabase キャッシュ（mfdash_cache テーブル） ---
 async function sbCacheGet(clinicKey, year, month){
@@ -543,12 +539,6 @@ const CATEGORY_ALIAS = {
   'デンシティ':['デンシティ'],
   'ハイコックス':['ハイコックス','ハイドラコックス','コックス','メソガン','ハイコ'],
   'ボトックス':['ボトックス','ボツリヌス','ボツ'],
-  '美容点滴・注射':['美容点滴'],
-  '高濃度ビタミンC点滴':['ビタミンC点滴','高濃度ビタミン'],
-  'エクソソーム点滴':['エクソソーム点滴'],
-  'NMN点滴':['NMN'],
-  '白玉注射':['白玉'],
-  '疲労回復点滴':['疲労回復','疲労'],
   'ヒアルロン酸':['ヒアルロン'],
   '肌育注射':['肌育','プロファイロ','水光','スキンブースター'],
   'スネコスパフォルマ':['スネコスパフォルマ','パフォルマ'],
@@ -1201,6 +1191,7 @@ async function migrateMergeCats(fromCats, toCat){
   try { await migrateNameToChild('肌育注射', 'リズネ', 'リズネ'); } catch(e){ console.error('リズネ子カテゴリ移行失敗:', e.message); }
   try { await migrateMergeCats(['CP-25'], 'ポテンツァ'); } catch(e){ console.error('CP-25統合失敗:', e.message); }
   try { await migrateUnassignCats(['ツヤ肌セット','ニキビ撃退セット']); } catch(e){ console.error('セット系未分類戻し失敗:', e.message); }
+  try { await migrateMergeCats(['美容点滴・注射','高濃度ビタミンC点滴','エクソソーム点滴','NMN点滴','白玉注射','疲労回復点滴'], EXCLUDED); } catch(e){ console.error('美容点滴・注射 除外移行失敗:', e.message); }
   if (SB_ON) migrateCacheToSb().catch(e=>console.error('キャッシュ移行失敗:', e.message));
   server.listen(PORT, () => {
     const ok = CLINIC_LIST.filter(c=>process.env[c.key+'_CLIENT_ID']).map(c=>c.name);
