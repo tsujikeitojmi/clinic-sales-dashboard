@@ -24,6 +24,7 @@ const http = require('http');
 const fs   = require('fs');
 const path = require('path');
 const url  = require('url');
+const crypto = require('crypto');
 
 const ROOT      = __dirname;
 const DATA_DIR  = path.join(ROOT, 'data');
@@ -1087,10 +1088,102 @@ function readBody(req){
   });
 }
 
+/* ====================== ログイン認証（Googleログイン・指定メールのみ許可） ======================
+   環境変数 GOOGLE_CLIENT_ID と ALLOWED_EMAILS の両方があるときだけ有効(AUTH_ON)。
+   未設定なら AUTH_ON=false ＝ 従来どおり誰でも閲覧可（設定を入れた瞬間に認証が有効になる）。 */
+const GOOGLE_CLIENT_ID = (process.env.GOOGLE_CLIENT_ID||'').trim();
+const ALLOWED_EMAILS   = (process.env.ALLOWED_EMAILS||'').split(',').map(s=>s.trim().toLowerCase()).filter(Boolean);
+const SESSION_SECRET   = (process.env.SESSION_SECRET||'').trim() || crypto.randomBytes(32).toString('hex');
+const AUTH_ON          = !!(GOOGLE_CLIENT_ID && ALLOWED_EMAILS.length);
+const SESSION_MAXAGE   = 7*86400;   // セッション有効期間（秒）＝7日
+
+function isAllowed(email){ return ALLOWED_EMAILS.includes(String(email||'').trim().toLowerCase()); }
+function signSession(email){
+  const payload = Buffer.from(JSON.stringify({ email, exp: Date.now()+SESSION_MAXAGE*1000 })).toString('base64url');
+  const sig = crypto.createHmac('sha256', SESSION_SECRET).update(payload).digest('base64url');
+  return payload + '.' + sig;
+}
+function verifySession(token){
+  if (!token || token.indexOf('.')<0) return null;
+  const [payload, sig] = token.split('.');
+  const expect = crypto.createHmac('sha256', SESSION_SECRET).update(payload).digest('base64url');
+  if (sig.length!==expect.length || !crypto.timingSafeEqual(Buffer.from(sig), Buffer.from(expect))) return null;
+  let d; try { d = JSON.parse(Buffer.from(payload,'base64url').toString('utf8')); } catch(e){ return null; }
+  if (!d || !d.exp || d.exp < Date.now() || !isAllowed(d.email)) return null;   // 期限切れ or 許可リストから外れたら無効
+  return d;
+}
+function parseCookies(req){
+  const out={}; (req.headers.cookie||'').split(';').forEach(p=>{ const i=p.indexOf('='); if(i>0) out[p.slice(0,i).trim()]=decodeURIComponent(p.slice(i+1).trim()); });
+  return out;
+}
+function currentUser(req){ return AUTH_ON ? verifySession(parseCookies(req).sid) : { email:'(auth off)' }; }
+function sessionCookie(token){ return `sid=${token}; HttpOnly; Secure; SameSite=Lax; Path=/; Max-Age=${SESSION_MAXAGE}`; }
+function clearCookie(){ return 'sid=; HttpOnly; Secure; SameSite=Lax; Path=/; Max-Age=0'; }
+function redirect(res, loc){ res.writeHead(302, { Location: loc }); res.end(); }
+
+// Google IDトークンを検証（tokeninfoエンドポイント利用・外部ライブラリ不要）
+async function verifyGoogleIdToken(idToken){
+  if (!idToken) return null;
+  try {
+    const r = await fetch('https://oauth2.googleapis.com/tokeninfo?id_token=' + encodeURIComponent(idToken));
+    if (!r.ok) return null;
+    const p = await r.json();
+    if (p.aud !== GOOGLE_CLIENT_ID) return null;                       // このアプリ向けのトークンか
+    if (p.email_verified!=='true' && p.email_verified!==true) return null;
+    return p;   // { email, name, ... }
+  } catch(e){ return null; }
+}
+function loginPage(){
+  return `<!doctype html><html lang="ja"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>ログイン｜3院売上集計ダッシュボード</title>
+<script src="https://accounts.google.com/gsi/client" async defer></script>
+<style>body{font-family:system-ui,-apple-system,"Segoe UI",sans-serif;background:#f7f3f4;display:grid;place-items:center;min-height:100vh;margin:0;color:#4a3a3d}
+.card{background:#fff;padding:40px 44px;border-radius:16px;box-shadow:0 10px 40px rgba(0,0,0,.08);text-align:center;max-width:340px}
+h1{font-size:18px;margin:0 0 6px}.sub{font-size:13px;color:#9a8a8d;margin:0 0 24px;line-height:1.6}
+.gbtn{display:flex;justify-content:center}#msg{color:#c0392b;font-size:13px;margin-top:16px;min-height:18px}</style></head>
+<body><div class="card">
+  <h1>3院売上集計ダッシュボード</h1>
+  <p class="sub">許可されたGoogleアカウントで<br>ログインしてください</p>
+  <div id="g_id_onload" data-client_id="${GOOGLE_CLIENT_ID}" data-callback="onSignIn" data-auto_prompt="false"></div>
+  <div class="gbtn"><div class="g_id_signin" data-type="standard" data-size="large" data-theme="outline" data-text="signin_with" data-shape="pill"></div></div>
+  <div id="msg"></div>
+</div>
+<script>
+function onSignIn(resp){
+  fetch('/auth/google',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({credential:resp.credential})})
+   .then(r=>r.json()).then(d=>{ if(d.ok){ location.href='/'; } else { document.getElementById('msg').textContent = d.error||'このアカウントは許可されていません。'; } })
+   .catch(()=>{ document.getElementById('msg').textContent='ログインに失敗しました。'; });
+}
+</script></body></html>`;
+}
+
 const server = http.createServer(async (req, res) => {
   const u = url.parse(req.url, true);
   const q = u.query;
   try {
+    // --- ログイン認証（AUTH_ON のときだけ働く。未設定なら素通り＝従来どおり）---
+    if (u.pathname==='/login'){
+      return AUTH_ON ? send(res,200,loginPage(),'text/html; charset=utf-8') : redirect(res,'/');
+    }
+    if (req.method==='POST' && u.pathname==='/auth/google'){
+      if (!AUTH_ON) return send(res,200,{ok:true});
+      const body = await readBody(req);
+      const p = await verifyGoogleIdToken(body.credential);
+      if (!p) return send(res,401,{ok:false,error:'ログインを確認できませんでした。'});
+      if (!isAllowed(p.email)) return send(res,403,{ok:false,error:'このアカウント（'+p.email+'）は許可されていません。'});
+      res.setHeader('Set-Cookie', sessionCookie(signSession(p.email)));
+      return send(res,200,{ok:true});
+    }
+    if (u.pathname==='/auth/logout'){
+      res.setHeader('Set-Cookie', clearCookie());
+      return redirect(res,'/login');
+    }
+    // 上記(ログイン関連)以外は、未ログインなら弾く
+    if (AUTH_ON && !currentUser(req)){
+      if (u.pathname.startsWith('/api/')) return send(res,401,{error:'ログインが必要です'});
+      return redirect(res,'/login');
+    }
+
     if (req.method==='GET' && (u.pathname==='/' || u.pathname==='/index.html')){
       return send(res, 200, fs.readFileSync(path.join(ROOT,'index.html'),'utf8'), 'text/html; charset=utf-8');
     }
