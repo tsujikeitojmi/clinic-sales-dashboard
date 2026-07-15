@@ -322,6 +322,14 @@
       <div class="sum-tbl-wrap"><div id="monthlyTableDiv"></div></div>
     </div>
 
+    <div class="panel" id="dailyPanel">
+      <div style="display:flex;align-items:center;gap:12px;margin-bottom:12px">
+        <h3 style="margin:0">日別サマリー</h3>
+        <button class="copy-btn" id="copyDailyBtn" onclick="copyDailyTable()">コピー</button>
+      </div>
+      <div class="sum-tbl-wrap"><div id="dailyTableDiv"></div></div>
+    </div>
+
     <div class="grid2">
       <div class="panel">
         <div style="display:flex;align-items:center;gap:12px;margin-bottom:12px">
@@ -596,7 +604,7 @@ function render(){
   buildAccordion();
   renderSubCatChips();
   renderChart();
-  renderMonthlyTable();   // 初回表示でも月別サマリーを描画（これが無いと全体タブを開くまで空だった）
+  renderMonthlyTable(); renderDailyTable();   // 初回表示でも月別サマリーを描画（これが無いと全体タブを開くまで空だった）
   renderRank();
   renderCatTable();
   renderItems();
@@ -867,7 +875,7 @@ function selectCat(cat){
   curSubCat = null;
   curSubCat2 = null;
   curCat = (cat===curCat) ? null : cat;
-  buildAccordion(); renderSubCatChips(); renderCards2(); renderChart(); renderMonthlyTable(); renderItems(); updateCatBadge(); toggleDetailPanels();
+  buildAccordion(); renderSubCatChips(); renderCards2(); renderChart(); renderMonthlyTable(); renderDailyTable(); renderItems(); updateCatBadge(); toggleDetailPanels();
 }
 
 function effectiveCat(){ return curSubCat2 || curSubCat || curCat; }
@@ -912,12 +920,12 @@ function renderSubCatChips(){
 function selectSubCat(cat){
   curSubCat = (cat===curSubCat) ? null : cat;
   curSubCat2 = null;
-  renderSubCatChips(); renderCards2(); renderChart(); renderMonthlyTable(); renderItems(); updateCatBadge();
+  renderSubCatChips(); renderCards2(); renderChart(); renderMonthlyTable(); renderDailyTable(); renderItems(); updateCatBadge();
 }
 
 function selectSubCat2(cat){
   curSubCat2 = (cat===curSubCat2) ? null : cat;
-  renderSubCatChips(); renderCards2(); renderChart(); renderMonthlyTable(); renderItems(); updateCatBadge();
+  renderSubCatChips(); renderCards2(); renderChart(); renderMonthlyTable(); renderDailyTable(); renderItems(); updateCatBadge();
 }
 
 function toggleDetailPanels(){
@@ -925,6 +933,8 @@ function toggleDetailPanels(){
   document.querySelector('.grid2').style.display = hide;
   // 月別サマリーは常に表示（カテゴリ選択中はそのカテゴリの件数・金額）
   document.getElementById('monthlyPanel').style.display = '';
+  // 日別サマリーも常に表示（月別と同じ挙動）
+  document.getElementById('dailyPanel').style.display = '';
   // 施術内訳は常に表示（全体タブでは全カテゴリの内訳、カテゴリ選択中はその中身）
   document.getElementById('itemsPanel').style.display = '';
 }
@@ -1113,6 +1123,90 @@ function copyMonthlyTable(){
   ].join('\t'));
   navigator.clipboard.writeText([header,...rows].join('\n')).then(()=>{
     const btn = document.getElementById('copyBtn');
+    btn.textContent='コピー済み'; btn.classList.add('copied');
+    setTimeout(()=>{ btn.textContent='コピー'; btn.classList.remove('copied'); }, 2000);
+  });
+}
+
+/* ====== 日別サマリーテーブル（月別と同じ作り：カテゴリ絞り込み・種別内訳対応） ====== */
+let dailyTableData = [];
+
+function renderDailyTable(){
+  const div = document.getElementById('dailyTableDiv');
+  const d = DATA.daily;
+  if (!d || !d.available){
+    // 旧キャッシュ（会計日なし）の月は、再取得しないと日別を出せない
+    dailyTableData = [];
+    div.innerHTML = '<div class="muted" style="padding:16px 4px">この月はまだ日別データがありません。右上の「最新取得」でデータを取り直すと、日別サマリーが表示されます。</div>';
+    return;
+  }
+  const ec = effectiveCat();
+  const pick = (x, f)=>{
+    if (!ec) return x[f] || 0;
+    return getCatAndDescendants(ec).reduce((s,n)=>{
+      const c = x.cats && x.cats[n]; return s + (c ? (c[f]||0) : 0);
+    }, 0);
+  };
+  dailyTableData = d.rows.map(x=>({
+    label:     x.label,
+    hasData:   x.hasData,
+    count:     pick(x,'count'),
+    sales:     pick(x,'通常') + pick(x,'CP') + pick(x,'媒体'),
+    n_cnt:     pick(x,'count_通常'),
+    n_sales:   pick(x,'通常'),
+    cp_cnt:    pick(x,'count_CP'),
+    cp_sales:  pick(x,'CP'),
+    m_cnt:     pick(x,'count_媒体'),
+    m_sales:   pick(x,'媒体'),
+  }));
+  const tot = dailyTableData.reduce((s,r)=>({
+    count:s.count+r.count, sales:s.sales+r.sales,
+    n_cnt:s.n_cnt+r.n_cnt, n_sales:s.n_sales+r.n_sales,
+    cp_cnt:s.cp_cnt+r.cp_cnt, cp_sales:s.cp_sales+r.cp_sales,
+    m_cnt:s.m_cnt+r.m_cnt, m_sales:s.m_sales+r.m_sales,
+  }), {count:0,sales:0,n_cnt:0,n_sales:0,cp_cnt:0,cp_sales:0,m_cnt:0,m_sales:0});
+
+  const rows = dailyTableData.map(r=>`
+    <tr class="${r.hasData?'':'no-data'}">
+      <td>${r.label}</td>
+      <td>${r.hasData ? num(r.count)+' 件' : '—'}</td>
+      <td>${r.hasData ? yen(r.sales) : '—'}</td>
+      <td class="col-n">${r.hasData ? num(r.n_cnt)+' 件' : '—'}</td>
+      <td class="col-n">${r.hasData ? yen(r.n_sales) : '—'}</td>
+      <td class="col-cp">${r.hasData ? num(r.cp_cnt)+' 件' : '—'}</td>
+      <td class="col-cp">${r.hasData ? yen(r.cp_sales) : '—'}</td>
+      <td class="col-m">${r.hasData ? num(r.m_cnt)+' 件' : '—'}</td>
+      <td class="col-m">${r.hasData ? yen(r.m_sales) : '—'}</td>
+    </tr>`).join('');
+
+  div.innerHTML = `
+    <table class="sum-tbl">
+      <thead><tr>
+        <th>日</th>
+        <th>総件数</th><th>総金額</th>
+        <th class="col-n">通常件数</th><th class="col-n">通常金額</th>
+        <th class="col-cp">CP件数</th><th class="col-cp">CP金額</th>
+        <th class="col-m">媒体件数</th><th class="col-m">媒体金額</th>
+      </tr></thead>
+      <tbody>${rows}</tbody>
+      <tfoot><tr>
+        <td>合計</td>
+        <td>${num(tot.count)} 件</td><td>${yen(tot.sales)}</td>
+        <td class="col-n">${num(tot.n_cnt)} 件</td><td class="col-n">${yen(tot.n_sales)}</td>
+        <td class="col-cp">${num(tot.cp_cnt)} 件</td><td class="col-cp">${yen(tot.cp_sales)}</td>
+        <td class="col-m">${num(tot.m_cnt)} 件</td><td class="col-m">${yen(tot.m_sales)}</td>
+      </tr></tfoot>
+    </table>`;
+}
+
+function copyDailyTable(){
+  if (!dailyTableData.length) return;
+  const header = ['日','総件数','総金額','通常件数','通常金額','CP件数','CP金額','媒体件数','媒体金額'].join('\t');
+  const rows = dailyTableData.filter(r=>r.hasData).map(r=>[
+    r.label, r.count, r.sales, r.n_cnt, r.n_sales, r.cp_cnt, r.cp_sales, r.m_cnt, r.m_sales,
+  ].join('\t'));
+  navigator.clipboard.writeText([header,...rows].join('\n')).then(()=>{
+    const btn = document.getElementById('copyDailyBtn');
     btn.textContent='コピー済み'; btn.classList.add('copied');
     setTimeout(()=>{ btn.textContent='コピー'; btn.classList.remove('copied'); }, 2000);
   });

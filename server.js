@@ -360,8 +360,9 @@ async function fetchClinicMonth(clinic, year, month){
     while (true){
       const my = idx++;
       if (my >= dates.length) return;
-      const vals = await fetchDay(token, clinic, dates[my]);
-      if (vals.length) values.push(...vals);
+      const d = dates[my];
+      const vals = await fetchDay(token, clinic, d);
+      if (vals.length){ for (const v of vals) v._day = d; values.push(...vals); }  // 日別サマリー用に会計日を付与
     }
   }
   await Promise.all(Array.from({length: Math.min(FETCH_CONCURRENCY, dates.length)}, worker));
@@ -485,6 +486,7 @@ async function readRaw(clinicKey, year, month){ const j = await readRawFull(clin
 function slimValues(values){
   return (values||[]).map(v=>({
     visitorId: v.visitorId,                    // 人数(ユニーク患者数)集計用（公式画面の「人数」）
+    _day: v._day,                              // 会計日(YYYY-MM-DD)。日別サマリー用（旧キャッシュには無い）
     paymentItems: (v.paymentItems||[]).map(it=>({
       kind: it.kind,                           // 施術/薬剤/物品/その他（公式画面の行分類）
       optionId: it.optionId,
@@ -760,6 +762,44 @@ async function buildMonthlyTrend(clinicKey, year, month, currentByCat){
   return out;
 }
 
+/* 日別サマリー：選択月の各日(1日〜末日/当月は今日まで)を、月別と同じ形（種別内訳・カテゴリ別cats付き）で返す。
+   会計日 _day は取得時に付与。旧キャッシュ(=_day無し)のときは available:false を返してフロントで案内表示する。 */
+function buildDailyBreakdown(values, masterMap, year, month){
+  const hasDay = (values||[]).some(v=>v && v._day);
+  if (!hasDay) return { available:false, rows:[] };   // 日付なし＝再取得が必要
+  const byDay = {};
+  values.forEach(v=>{ const d=v&&v._day; if(!d) return; (byDay[d]=byDay[d]||[]).push(v); });
+  const first = new Date(year, month-1, 1);
+  const today = new Date();
+  const isCur = (year===today.getFullYear() && month===today.getMonth()+1);
+  const last  = isCur ? today : new Date(year, month, 0);
+  const rows = [];
+  for (let cur=new Date(first); cur<=last; cur.setDate(cur.getDate()+1)){
+    const ds   = fmtDate(cur);
+    const vals = byDay[ds] || [];
+    const byCat = aggregateClinic(vals, masterMap, null);
+    const sum   = sumByCat(byCat);
+    const allSales = Object.values(byCat).reduce((s,c)=>s+c.sales,0);
+    const allCount = Object.values(byCat).reduce((s,c)=>s+c.count,0);
+    const cats = {};
+    Object.keys(byCat).forEach(cat=>{
+      if (cat===UNCLASSIFIED || cat===EXCLUDED) return;
+      const c = byCat[cat];
+      cats[cat] = { sales:c.sales, count:c.count, 通常:c['通常'], CP:c['CP'], 媒体:c['媒体'],
+        count_通常:c['count_通常']||0, count_CP:c['count_CP']||0, count_媒体:c['count_媒体']||0 };
+    });
+    rows.push({
+      label:`${('0'+(cur.getMonth()+1)).slice(-2)}/${('0'+cur.getDate()).slice(-2)}`,
+      hasData: vals.length>0,
+      sales:allSales, count:allCount,
+      通常:sum.通常, CP:sum.CP, 媒体:sum.媒体,
+      count_通常:sum.count_通常, count_CP:sum.count_CP, count_媒体:sum.count_媒体,
+      cats,
+    });
+  }
+  return { available:true, rows };
+}
+
 async function getDashboard(clinicKey, year, month, refresh){
   // 既定はキャッシュ優先（=速い）。refresh=true のときだけAPI再取得。
   const { values, cached, fetchedAt } = await getValues(clinicKey, year, month, refresh);
@@ -798,6 +838,7 @@ async function getDashboard(clinicKey, year, month, refresh){
     categories,
     items: aggregateItems(values, masterMap),  // 施術(optionId)単位の内訳
     monthly: await buildMonthlyTrend(clinicKey, year, month, byCat),
+    daily: buildDailyBreakdown(values, masterMap, year, month),
     rankings,
     pendingCount: Object.keys(pend).length,   // 実際に振り分けできる未分類の件数（キャンセル料・払戻金などoptionId無しは除く）
   };
