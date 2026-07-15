@@ -464,6 +464,35 @@ function aggregateItems(values, masterMap){
     .sort((a,b)=> b.sales - a.sales);
 }
 
+/* ====================== 公式画面(medical-force)準拠の集計 ======================
+   medical-force の公式集計画面と同じ「個数・消化回数・人数・売上」を kind 別に出す。金額ロジックには影響しない。
+     個数=消化でない明細の数量(quantity)合計（単発＋コース契約）／消化回数=消化(courseDigestion>0)の数量合計
+     人数=その行(kind)の明細を持つユニーク患者数(visitorId)／売上=消化計上（金額と同一） */
+const OFFICIAL_ROWS = ['施術','薬剤','物品','その他'];
+function officialRowOf(kind){ return (kind==='施術'||kind==='薬剤'||kind==='物品') ? kind : 'その他'; }
+function aggregateByKind(values){
+  const R = {}; OFFICIAL_ROWS.forEach(k=>{ R[k]={kind:k, kosuu:0, shouka:0, sales:0, _ppl:new Set()}; });
+  (values||[]).forEach(v=>{
+    const vis = v.visitorId || null;
+    (v.paymentItems||[]).forEach(it=>{
+      const row = officialRowOf(it.kind);
+      const g = R[row];
+      const qty      = Number(it.quantity)||0;
+      const contract = Number(it.courseContractAmountWithTax)||0;
+      const digest   = Number(it.courseDigestionAmountWithTax)||0;
+      const genuine  = Number(it.genuinePriceWithTax)||0;
+      // 個数・消化回数は 施術/薬剤/物品 のみ（その他＝前受金・返金・調整は公式でも0）
+      if (row !== 'その他'){ if (digest>0) g.shouka += qty; else g.kosuu += qty; }
+      // 売上は全行で消化計上（金額ロジックと同一）
+      g.sales += contract>0 ? 0 : (digest>0 ? Math.floor(digest) : Math.floor(genuine));
+      // 人数：施術/薬剤/物品は価格フィールドのある行のみ、その他は kind 空欄を除外
+      const person = (row === 'その他') ? !!it.kind : (it.genuinePriceWithTax !== undefined);
+      if (vis && person) g._ppl.add(vis);
+    });
+  });
+  return OFFICIAL_ROWS.map(k=>({ kind:k, kosuu:R[k].kosuu, shouka:R[k].shouka, ninzuu:R[k]._ppl.size, sales:R[k].sales }));
+}
+
 /* ====================== キャッシュ（APIの生データを保存） ======================
    集計後ではなく「取得した生データ(values)」をキャッシュする。
    こうすると施術マスタの振り分けを変えても、再集計でちゃんと反映される。 */
@@ -499,6 +528,11 @@ function slimValues(values){
       genuinePriceWithTax: it.genuinePriceWithTax,
     }))
   }));
+}
+// 公式集計に必要な項目(kind/quantity/visitorId)が入った新しいキャッシュか判定（古い月は要再取得）
+function isEnriched(values){
+  return Array.isArray(values) && values.length>0 &&
+    values.some(v=> v && Object.prototype.hasOwnProperty.call(v,'visitorId'));
 }
 async function writeRaw(clinicKey, year, month, valuesRaw){
   const values = slimValues(valuesRaw);   // 軽量化して保存
@@ -857,6 +891,7 @@ async function getDashboard(clinicKey, year, month, refresh){
     items: itemsData,  // 施術(optionId)単位の内訳
     monthly: await buildMonthlyTrend(clinicKey, year, month, byCat, itemsData),
     daily: buildDailyBreakdown(values, masterMap, year, month),
+    official: { rows: aggregateByKind(values), enriched: isEnriched(values) },   // 公式画面準拠（個数/消化回数/人数/売上）
     rankings,
     pendingCount: Object.keys(pend).length,   // 実際に振り分けできる未分類の件数（キャンセル料・払戻金などoptionId無しは除く）
   };
