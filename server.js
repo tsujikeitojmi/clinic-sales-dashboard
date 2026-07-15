@@ -550,7 +550,9 @@ function cacheExists(clinicKey, year, month){ return fs.existsSync(cacheFile(cli
 async function getValues(clinicKey, year, month, refresh){
   if (!refresh){
     const j = await readRawFull(clinicKey, year, month);
-    if (j) return { values:j.values, cached:true, fetchedAt:j.fetchedAt };
+    // enrich済み or データが空の月はキャッシュを使う。データはあるが旧形式(kind/visitorId無し)の月だけ自動で取り直す
+    if (j && (isEnriched(j.values) || (j.values||[]).length===0)) return { values:j.values, cached:true, fetchedAt:j.fetchedAt };
+    if (j) console.log(`  自動再取得(旧形式): ${clinicKey} ${year}/${month}`);
   }
   const clinic = getClinic(clinicKey);
   const values = await fetchClinicMonth(clinic, year, month);
