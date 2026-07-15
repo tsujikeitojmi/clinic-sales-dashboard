@@ -925,8 +925,8 @@ function toggleDetailPanels(){
   document.querySelector('.grid2').style.display = hide;
   // 月別サマリーは常に表示（カテゴリ選択中はそのカテゴリの件数・金額）
   document.getElementById('monthlyPanel').style.display = '';
-  // 施術内訳はカテゴリ選択中のみ表示（全体タブでは非表示）
-  document.getElementById('itemsPanel').style.display = curCat ? '' : 'none';
+  // 施術内訳は常に表示（全体タブでは全カテゴリの内訳、カテゴリ選択中はその中身）
+  document.getElementById('itemsPanel').style.display = '';
 }
 
 /* カテゴリ選択時はカード値をそのカテゴリ（子孫含む）で上書き */
@@ -1467,7 +1467,7 @@ function updateMasterRow(opt){ const el=document.getElementById('mrow-'+opt), r=
 
 async function setMasterType(opt, t){
   const r = MASTER.rows.find(x=>x.optionId===opt); if(!r) return;
-  if (r.category===UNC){ alert('先にカテゴリを決めてください（種別だけの設定はできません）'); return; }
+  // 未分類でも種別（通常/CP/媒体）を先に選べる。あとでカテゴリを決めるとこの種別が引き継がれる。
   const prev=r.type; r.type=t; updateMasterRow(opt);
   try { await apiPost('/api/assign', {assignments:[{optionId:opt, name:r.name, apiCat:r.apiCat, category:r.category, type:t}]}); masterDirty=true; }
   catch(e){ r.type=prev; updateMasterRow(opt); onErr(e); }
