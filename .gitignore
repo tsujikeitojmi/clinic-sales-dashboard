@@ -14,3 +14,9 @@ npm-debug.log*
 .DS_Store
 Thumbs.db
 *.log
+
+# OneDrive が別PCとの競合で作るコピー
+*-LAPTOP-*.js
+*-LAPTOP-*.html
+*-DESKTOP-*.js
+*-DESKTOP-*.html
