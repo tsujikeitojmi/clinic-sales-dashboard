@@ -759,7 +759,7 @@ let trendCacheInvalidAt = 0;
 const masterListCache = new Map();   // clinicKey -> { byOpt, months, ts }
 let masterListInvalidAt = 0;
 
-async function buildMonthlyTrend(clinicKey, year, month, currentByCat, currentItems){
+async function buildMonthlyTrend(clinicKey, year, month, currentByCat){
   const cacheKey = `${clinicKey}_${year}_${month}`;
   const cached = trendCache.get(cacheKey);
   if (cached && cached.ts >= trendCacheInvalidAt) return cached.data;
@@ -771,34 +771,27 @@ async function buildMonthlyTrend(clinicKey, year, month, currentByCat, currentIt
   // 各月を並列で集計（44か月でも遅くならないように）
   const out = await Promise.all(serials.map(async s=>{
     const y = Math.floor(s/12), m = (s%12)+1;
-    let byCat, items;
-    if (y===year && m===month){ byCat = currentByCat; items = currentItems; }
-    else { const raw = await readRaw(clinicKey, y, m); byCat = raw ? aggregateClinic(raw, masterMap, null) : null; items = raw ? aggregateItems(raw, masterMap) : null; }
-    const sum = byCat ? sumByCat(byCat) : null;   // 種別別「金額」は従来どおり byCat から
+    let byCat;
+    if (y===year && m===month) byCat = currentByCat;
+    else { const raw = await readRaw(clinicKey, y, m); byCat = raw ? aggregateClinic(raw, masterMap, null) : null; }
+    const sum = byCat ? sumByCat(byCat) : null;
     // 全件合計（★未分類・除外含む）= カード「累計粗利」と一致する値
     const allSales = byCat ? Object.values(byCat).reduce((s,c)=>s+c.sales,0) : 0;
-    // 「件数」列は延べ人数（施術内訳itemsのユニーク患者数の合計＝カードの延べ人数と一致）に統一
-    const pplTot  = items ? items.reduce((s,it)=>s+(it.count||0),0) : 0;
-    const pplType = t => items ? items.filter(it=>(TYPES_NEW.includes(it.type)?it.type:'通常')===t).reduce((s,it)=>s+(it.count||0),0) : 0;
-    // カテゴリ別の内訳（金額は byCat、人数は items から。フロントの絞り込み用）
+    // 「件数」列は会計ベースの件数（1会計内で同じ施術×種別は1と数える）
+    const allCount = byCat ? Object.values(byCat).reduce((s,c)=>s+c.count,0) : 0;
+    // カテゴリ別の内訳（フロントの絞り込み用）
     const cats = {};
     if (byCat) Object.keys(byCat).forEach(cat=>{
       if (cat===UNCLASSIFIED || cat===EXCLUDED) return;
       const c = byCat[cat];
-      cats[cat] = { sales:c.sales, 通常:c['通常'], CP:c['CP'], 媒体:c['媒体'],
-        count:0, count_通常:0, count_CP:0, count_媒体:0 };
-    });
-    if (items) items.forEach(it=>{
-      const cat = it.category;
-      if (cat===UNCLASSIFIED || cat===EXCLUDED || !cats[cat]) return;
-      const typ = TYPES_NEW.includes(it.type) ? it.type : '通常';
-      cats[cat].count += (it.count||0); cats[cat]['count_'+typ] += (it.count||0);
+      cats[cat] = { sales:c.sales, count:c.count, 通常:c['通常'], CP:c['CP'], 媒体:c['媒体'],
+        count_通常:c['count_通常']||0, count_CP:c['count_CP']||0, count_媒体:c['count_媒体']||0 };
     });
     return {
       label:`${y}/${('0'+m).slice(-2)}`,
-      sales:allSales, count:pplTot,
+      sales:allSales, count:allCount,
       通常:sum?sum.通常:0, CP:sum?sum.CP:0, 媒体:sum?sum.媒体:0,
-      count_通常:pplType('通常'), count_CP:pplType('CP'), count_媒体:pplType('媒体'),
+      count_通常:sum?sum.count_通常:0, count_CP:sum?sum.count_CP:0, count_媒体:sum?sum.count_媒体:0,
       hasData:!!byCat,
       cats,
     };
@@ -822,31 +815,23 @@ function buildDailyBreakdown(values, masterMap, year, month){
   for (let cur=new Date(first); cur<=last; cur.setDate(cur.getDate()+1)){
     const ds   = fmtDate(cur);
     const vals = byDay[ds] || [];
-    const byCat = aggregateClinic(vals, masterMap, null);   // 金額用
-    const items = aggregateItems(vals, masterMap);          // 人数用（延べ人数＝ユニーク患者数）
+    const byCat = aggregateClinic(vals, masterMap, null);
     const sum   = sumByCat(byCat);
     const allSales = Object.values(byCat).reduce((s,c)=>s+c.sales,0);
-    const pplTot  = items.reduce((s,it)=>s+(it.count||0),0);
-    const pplType = t => items.filter(it=>(TYPES_NEW.includes(it.type)?it.type:'通常')===t).reduce((s,it)=>s+(it.count||0),0);
+    const allCount = Object.values(byCat).reduce((s,c)=>s+c.count,0);   // 会計ベースの件数
     const cats = {};
     Object.keys(byCat).forEach(cat=>{
       if (cat===UNCLASSIFIED || cat===EXCLUDED) return;
       const c = byCat[cat];
-      cats[cat] = { sales:c.sales, 通常:c['通常'], CP:c['CP'], 媒体:c['媒体'],
-        count:0, count_通常:0, count_CP:0, count_媒体:0 };
-    });
-    items.forEach(it=>{
-      const cat = it.category;
-      if (cat===UNCLASSIFIED || cat===EXCLUDED || !cats[cat]) return;
-      const typ = TYPES_NEW.includes(it.type) ? it.type : '通常';
-      cats[cat].count += (it.count||0); cats[cat]['count_'+typ] += (it.count||0);
+      cats[cat] = { sales:c.sales, count:c.count, 通常:c['通常'], CP:c['CP'], 媒体:c['媒体'],
+        count_通常:c['count_通常']||0, count_CP:c['count_CP']||0, count_媒体:c['count_媒体']||0 };
     });
     rows.push({
       label:`${('0'+(cur.getMonth()+1)).slice(-2)}/${('0'+cur.getDate()).slice(-2)}`,
       hasData: vals.length>0,
-      sales:allSales, count:pplTot,
+      sales:allSales, count:allCount,
       通常:sum.通常, CP:sum.CP, 媒体:sum.媒体,
-      count_通常:pplType('通常'), count_CP:pplType('CP'), count_媒体:pplType('媒体'),
+      count_通常:sum.count_通常, count_CP:sum.count_CP, count_媒体:sum.count_媒体,
       cats,
     });
   }
@@ -891,7 +876,7 @@ async function getDashboard(clinicKey, year, month, refresh){
       visitCount: countVisits(values) },   // 来院数（会計数）。金額・施術数はそのまま。
     categories,
     items: itemsData,  // 施術(optionId)単位の内訳
-    monthly: await buildMonthlyTrend(clinicKey, year, month, byCat, itemsData),
+    monthly: await buildMonthlyTrend(clinicKey, year, month, byCat),
     daily: buildDailyBreakdown(values, masterMap, year, month),
     official: { rows: aggregateByKind(values), enriched: isEnriched(values) },   // 公式画面準拠（個数/消化回数/人数/売上）
     rankings,
