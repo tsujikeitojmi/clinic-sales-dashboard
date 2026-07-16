@@ -353,10 +353,10 @@
         </div>
         <table id="catTable">
           <thead>
-            <tr><th>カテゴリ</th><th>売上</th><th>人数</th>
-              <th class="col-n">通常売上</th><th class="col-n">通常人数</th>
-              <th class="col-cp">CP売上</th><th class="col-cp">CP人数</th>
-              <th class="col-m">媒体売上</th><th class="col-m">媒体人数</th></tr>
+            <tr><th>カテゴリ</th><th>売上</th><th>件数</th>
+              <th class="col-n">通常売上</th><th class="col-n">通常件数</th>
+              <th class="col-cp">CP売上</th><th class="col-cp">CP件数</th>
+              <th class="col-m">媒体売上</th><th class="col-m">媒体件数</th></tr>
           </thead>
           <tbody></tbody>
         </table>
@@ -365,7 +365,7 @@
         <h3>ランキング</h3>
         <div class="rank-lbl">粗利(売上) TOP</div>
         <div class="rank" id="rankSales"></div>
-        <div class="rank-lbl" style="margin-top:16px">人数 TOP</div>
+        <div class="rank-lbl" style="margin-top:16px">件数 TOP</div>
         <div class="rank" id="rankCount"></div>
       </div>
     </div>
@@ -375,7 +375,7 @@
       <div class="muted" id="itemsHint" style="font-size:11px;margin-bottom:8px"></div>
       <table id="itemsTable">
         <thead>
-          <tr><th>施術名（マスタ）</th><th>APIカテゴリ（元フォルダ）</th><th>カテゴリ</th><th>種別</th><th>人数</th><th>売上</th><th>平均単価</th><th></th></tr>
+          <tr><th>施術名（マスタ）</th><th>APIカテゴリ（元フォルダ）</th><th>カテゴリ</th><th>種別</th><th>件数</th><th>売上</th><th>平均単価</th><th></th></tr>
         </thead>
         <tbody></tbody>
       </table>
@@ -690,22 +690,22 @@ function updateFreshness(){
 /* ====== カード ====== */
 function renderCards(){
   const cats  = DATA.categories || [];
-  const items = DATA.items || [];
   const sales  = cats.reduce((a,c)=>a+c.sales,0);
   const normal = cats.reduce((a,c)=>a+(c['通常']||0),0);
   const CP     = cats.reduce((a,c)=>a+(c.CP||0),0);
   const media  = cats.reduce((a,c)=>a+(c.媒体||0),0);
-  const ppl    = t => items.filter(x=>x.type===t).reduce((a,x)=>a+x.count,0);
-  const pplAll = items.reduce((a,x)=>a+x.count,0);
+  // 件数は会計ベース（売上と同じ母集団）。売上と同じく★未分類・除外も含めた全件合計。
+  const cnt    = t => cats.reduce((a,c)=>a+(c['count_'+t]||0),0);
+  const cntAll = cats.reduce((a,c)=>a+(c.count||0),0);
   const cards = [
     {k:'全体 売上', v:yen(sales)},
     {k:'通常 売上', v:yen(normal)},
     {k:'CP 売上',   v:yen(CP)},
     {k:'媒体 売上', v:yen(media)},
-    {k:'全体 延べ人数', v:num(pplAll)+' 人', s:'内訳の人数合計'},
-    {k:'通常 人数', v:num(ppl('通常'))+' 人'},
-    {k:'CP 人数',   v:num(ppl('CP'))+' 人'},
-    {k:'媒体 人数', v:num(ppl('媒体'))+' 人'},
+    {k:'全体 件数', v:num(cntAll)+' 件', s:'会計ごとの件数'},
+    {k:'通常 件数', v:num(cnt('通常'))+' 件'},
+    {k:'CP 件数',   v:num(cnt('CP'))+' 件'},
+    {k:'媒体 件数', v:num(cnt('媒体'))+' 件'},
   ];
   document.getElementById('cards').innerHTML = cards.map(c=>`
     <div class="card ${c.accent?'accent':''}">
@@ -808,15 +808,6 @@ function getTreeSales(name, catMap){
 function getTreeCount(name, catMap){
   return getCatAndDescendants(name).reduce((s,n)=>s+((catMap[n]&&catMap[n].count)||0),0);
 }
-/* 延べ人数（＝施術内訳itemsのユニーク患者数）をカテゴリ別に集計したマップ */
-function pplByCatMap(){
-  const m = {};
-  (DATA.items||[]).forEach(x=>{ m[x.category]=(m[x.category]||0)+(x.count||0); });
-  return m;
-}
-function getTreePpl(name, pplMap){
-  return getCatAndDescendants(name).reduce((s,n)=>s+(pplMap[n]||0),0);
-}
 function toggleTreeCat(name){
   if (expandedTreeCats.has(name)) expandedTreeCats.delete(name);
   else expandedTreeCats.add(name);
@@ -860,34 +851,32 @@ function buildAccordion(){
       badge = `<span class="cnt">${cats.filter(x=>x.sales>0 && x.category!=='★未分類').length}</span>`;
 
       const treeNames = new Set(Object.keys(TREE_MAP));
-      const pmap = pplByCatMap();
-      const totalPpl = (DATA.items||[]).reduce((s,x)=>s+(x.count||0),0);
-      const vlc = (sales,ppl)=>`<span class="vl">${yen(sales)}<span class="c">${num(ppl)}人</span></span>`;
+      const vlc = (sales,cnt)=>`<span class="vl">${yen(sales)}<span class="c">${num(cnt)}件</span></span>`;
       const rows = [`<div class="row ${curCat===null?'on':''}" onclick="selectCat(null)">
-          <span class="nm">▣ 全体</span>${vlc(DATA.summary.totalSales, totalPpl)}</div>`];
+          <span class="nm">▣ 全体</span>${vlc(DATA.summary.totalSales, DATA.summary.totalCount)}</div>`];
       // 親カテゴリのみサイドバーに表示（子はダッシュボード上部チップで選択）
       (CFG.categoryTree||[]).forEach(node=>{
         const nm = node.name;
         if (!catAllowedForClinic(nm, c.key)) return;   // 院スコープ外（例：サブシジョンは福岡のみ）は非表示
         const sales = getTreeSales(nm, map);
-        const ppl = getTreePpl(nm, pmap);
+        const cnt = getTreeCount(nm, map);
         const sel = curCat===nm;
         rows.push(`<div class="row ${sales===0?'zero':''} ${sel?'on':''}"
           data-cat="${esc(nm)}" onclick="selectCat(this.dataset.cat)">
-          <span class="nm">${esc(nm)}</span>${vlc(sales, ppl)}</div>`);
+          <span class="nm">${esc(nm)}</span>${vlc(sales, cnt)}</div>`);
       });
       // ツリーに含まれないカテゴリ（除: ★未分類）を末尾に追加
       cats.filter(x=>!treeNames.has(x.category)&&x.category!=='★未分類').forEach(x=>{
         rows.push(`<div class="row ${x.sales===0?'zero':''} ${curCat===x.category?'on':''}"
             data-cat="${esc(x.category)}" onclick="selectCat(this.dataset.cat)">
-            <span class="nm">${esc(displayCat(x.category))}</span>${vlc(x.sales, pmap[x.category]||0)}</div>`);
+            <span class="nm">${esc(displayCat(x.category))}</span>${vlc(x.sales, x.count||0)}</div>`);
       });
       // ★未分類はカテゴリではなく「未振り分けの状態」なので、サイドバーのタブには出さない
       //（振り分けが必要な施術は「未分類を振り分け」ボタンから確認・処理する）
       // 除外（合計には入らない）。中身を確認して誤りを修正できるよう、専用行として末尾に表示
       if (map['除外']) rows.push(`<div class="row excl ${curCat==='除外'?'on':''}"
           data-cat="除外" onclick="selectCat(this.dataset.cat)" title="集計には含まれません。誤って除外した施術を確認・修正できます">
-          <span class="nm">✕ 除外</span>${vlc(map['除外'].sales, pmap['除外']||0)}</div>`);
+          <span class="nm">✕ 除外</span>${vlc(map['除外'].sales, map['除外'].count||0)}</div>`);
       body = rows.join('');
     } else {
       const ov = (OVERVIEW||[]).find(o=>o.key===c.key);
@@ -989,21 +978,20 @@ function renderCards2(){
   const normal = matched.reduce((s,c)=>s+(c['通常']||0),0);
   const CP     = matched.reduce((s,c)=>s+(c.CP||0),0);
   const media  = matched.reduce((s,c)=>s+(c.媒体||0),0);
-  // 延べ人数（種別別）＝内訳（施術optionId単位）のユニーク患者数を種別ごとに合計
-  const catItems = (DATA.items||[]).filter(x=>filterSet.has(x.category));
-  const ppl    = t => catItems.filter(x=>x.type===t).reduce((s,x)=>s+x.count,0);
-  const pplAll = catItems.reduce((s,x)=>s+x.count,0);
+  // 件数（種別別）＝会計ベース。売上と同じ母集団なので 売上÷件数＝単価 が成立する。
+  const cnt    = t => matched.reduce((s,c)=>s+(c['count_'+t]||0),0);
+  const cntAll = matched.reduce((s,c)=>s+(c.count||0),0);
   const cards = [
     // 上段：売上（合計／通常／CP／媒体）
     {k:`${displayCat(ec)} 売上`, v:yen(sales)},
     {k:'通常 売上', v:yen(normal)},
     {k:'CP 売上',   v:yen(CP)},
     {k:'媒体 売上', v:yen(media)},
-    // 下段：延べ人数（合計／通常／CP／媒体）
-    {k:`${displayCat(ec)} 延べ人数`, v:num(pplAll)+' 人', s:'内訳の人数合計'},
-    {k:'通常 人数', v:num(ppl('通常'))+' 人'},
-    {k:'CP 人数',   v:num(ppl('CP'))+' 人'},
-    {k:'媒体 人数', v:num(ppl('媒体'))+' 人'},
+    // 下段：件数（合計／通常／CP／媒体）
+    {k:`${displayCat(ec)} 件数`, v:num(cntAll)+' 件', s:'会計ごとの件数'},
+    {k:'通常 件数', v:num(cnt('通常'))+' 件'},
+    {k:'CP 件数',   v:num(cnt('CP'))+' 件'},
+    {k:'媒体 件数', v:num(cnt('媒体'))+' 件'},
   ];
   document.getElementById('cards').innerHTML = cards.map(c=>`
     <div class="card ${c.accent?'accent':''}">
@@ -1268,24 +1256,19 @@ function renderRank(){
       </div>`).join('') || '<div class="muted">データなし</div>';
   };
   draw('rankSales', 'sales', yen);                 // 粗利(売上) TOP
-  draw('rankCount', 'ppl', v=>num(v)+' 人');        // 人数 TOP（延べ人数）
+  draw('rankCount', 'count', v=>num(v)+' 件');      // 件数 TOP（会計ベース）
 }
 
 /* ====== カテゴリ別テーブル ====== */
 /* DATA.categories を親施術（ルートカテゴリ）ごとに集約（子カテゴリの数値を親に合算） */
 function catsByRoot(){
   const roots = new Map();
-  const ensure = root=>{ let r=roots.get(root); if(!r){ r={category:root, sales:0, count:0, ppl:0, ppl_通常:0, ppl_CP:0, ppl_媒体:0, 通常:0, CP:0, 媒体:0}; roots.set(root,r);} return r; };
+  const ensure = root=>{ let r=roots.get(root); if(!r){ r={category:root, sales:0, count:0, count_通常:0, count_CP:0, count_媒体:0, 通常:0, CP:0, 媒体:0}; roots.set(root,r);} return r; };
   (DATA.categories||[]).forEach(c=>{
     const r = ensure(getRootCat(c.category));
     r.sales += c.sales||0; r.count += c.count||0;
     r.通常 += c['通常']||0; r.CP += c.CP||0; r.媒体 += c.媒体||0;
-  });
-  // 延べ人数は施術内訳(items)を種別ごとにカテゴリ→ルートで合算
-  (DATA.items||[]).forEach(x=>{
-    const r = ensure(getRootCat(x.category));
-    const n = x.count||0, t = (x.type==='CP'||x.type==='媒体') ? x.type : '通常';
-    r.ppl += n; r['ppl_'+t] += n;
+    r.count_通常 += c['count_通常']||0; r.count_CP += c['count_CP']||0; r.count_媒体 += c['count_媒体']||0;
   });
   return [...roots.values()];
 }
@@ -1302,17 +1285,17 @@ function renderCatTable(){
   const tb = document.querySelector('#catTable tbody');
   tb.innerHTML = catTableData.map(c=>`
     <tr class="${c.category==='★未分類'?'unc':''}">
-      <td>${esc(displayCat(c.category))}</td><td>${yen(c.sales)}</td><td>${num(c.ppl)}</td>
-      <td class="col-n">${yen(c.通常)}</td><td class="col-n">${num(c.ppl_通常)}</td>
-      <td class="col-cp">${yen(c.CP)}</td><td class="col-cp">${num(c.ppl_CP)}</td>
-      <td class="col-m">${yen(c.媒体)}</td><td class="col-m">${num(c.ppl_媒体)}</td>
+      <td>${esc(displayCat(c.category))}</td><td>${yen(c.sales)}</td><td>${num(c.count)}</td>
+      <td class="col-n">${yen(c.通常)}</td><td class="col-n">${num(c.count_通常)}</td>
+      <td class="col-cp">${yen(c.CP)}</td><td class="col-cp">${num(c.count_CP)}</td>
+      <td class="col-m">${yen(c.媒体)}</td><td class="col-m">${num(c.count_媒体)}</td>
     </tr>`).join('');
 }
 
 function copyCatTable(){
-  const header = ['カテゴリ','売上','人数','通常売上','通常人数','CP売上','CP人数','媒体売上','媒体人数'].join('\t');
+  const header = ['カテゴリ','売上','件数','通常売上','通常件数','CP売上','CP件数','媒体売上','媒体件数'].join('\t');
   const rows = (catTableData||[]).map(c=>[
-    displayCat(c.category), c.sales, c.ppl, c.通常, c.ppl_通常, c.CP, c.ppl_CP, c.媒体, c.ppl_媒体,
+    displayCat(c.category), c.sales, c.count, c.通常, c.count_通常, c.CP, c.count_CP, c.媒体, c.count_媒体,
   ].join('\t'));
   navigator.clipboard.writeText([header,...rows].join('\n')).then(()=>{
     const btn = document.getElementById('copyCatBtn');
@@ -1331,7 +1314,7 @@ function renderItems(){
   document.getElementById('itemsTitle').textContent = `施術内訳（${ec ? displayCat(ec) : '全カテゴリ'}）`;
   const totS = items.reduce((s,x)=>s+x.sales,0), totC = items.reduce((s,x)=>s+x.count,0);
   document.getElementById('itemsHint').textContent =
-    `${items.length}施術 ・ 合計 ${yen(totS)} / 延べ${num(totC)}人` +
+    `${items.length}施術 ・ 合計 ${yen(totS)} / ${num(totC)}件` +
     (curCat ? '' : '　※左サイドで施術カテゴリを選ぶと、その中身だけに絞れます');
   const tb = document.querySelector('#itemsTable tbody');
   if (!items.length){ tb.innerHTML = '<tr><td colspan="8" class="muted">該当なし</td></tr>'; return; }

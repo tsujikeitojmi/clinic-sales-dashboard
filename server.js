@@ -431,21 +431,21 @@ function countVisits(values){
 
 /* 施術(optionId)単位の内訳。カテゴリ別ダッシュボードの「中身」表示用（集計コアは変更せず読み取りのみ）。
    ・売上 = 同じルール（契約 or 単発genuine、消化除外）の合算 → 合計はカテゴリ売上と一致
-   ・件数 = その施術を受けた「人数」＝ユニーク患者数(visitorId)。公式画面の各施術「人数」と一致。
-           （同じ人が同じ来店で同じ施術を2回受けても1、別日に受けても1＝頭数）
-           ※旧データ(visitorId無し)は会計単位でフォールバック。金額には一切影響しない。 */
+   ・件数 = aggregateClinic と同じ数え方（会計ごとに数える。同一会計内で同じ施術は1件）。
+           同じ人が別の日に同じ施術を受けたら2件＝「回数」であって頭数ではない。
+           → 内訳の件数合計 = カード/月別サマリーの総件数 と一致する。
+   ※ユニーク患者数(頭数)は公式集計テーブル(aggregateByKind)だけが扱う。 */
 function aggregateItems(values, masterMap){
   const byOpt = {};
-  (values||[]).forEach((v, ai)=>{
-    const person = v.visitorId || ('__acct' + ai);   // 患者ID（無ければ会計ごとに一意＝旧データ用）
+  (values||[]).forEach(v=>{
+    const counted = new Set();   // 会計内の重複排除（aggregateClinic の countKey と同じ考え方）
     (v.paymentItems||[]).forEach(it=>{
       const contract = Number(it.courseContractAmountWithTax)||0;
       const digest   = Number(it.courseDigestionAmountWithTax)||0;
       const genuine  = Number(it.genuinePriceWithTax)||0;
-      const priced   = it.genuinePriceWithTax !== undefined;   // 価格のある行（人数の対象。契約・消化・単品・¥0を含む＝公式「人数」と一致）
-      // 売上は消化計上（契約は0扱い、消化 or 単品の実額）＝カテゴリ売上と一致・金額は不変
-      const sales = contract>0 ? 0 : (digest>0 ? Math.floor(digest) : Math.floor(genuine));
-      if (sales===0 && !priced) return;                        // 売上にも人数にも効かない行はスキップ
+      if (contract>0) return;                                  // コース契約は計上しない（消化時に計上）
+      const sales = digest>0 ? Math.floor(digest) : Math.floor(genuine);
+      if (sales===0) return;                                   // 売上が立たない行は件数にも数えない
       const opt = String(it.optionId||'').trim();
       let cat, typ;
       if (opt && masterMap[opt]){
@@ -454,13 +454,13 @@ function aggregateItems(values, masterMap){
       } else { cat = UNCLASSIFIED; typ = '通常'; }
       if (!TYPES_NEW.includes(typ)) typ='通常';
       const k = opt || ('noopt|' + (it.name||''));
-      if (!byOpt[k]) byOpt[k] = { optionId:opt, name:it.name||'', apiCat:it.category||'', category:cat, type:typ, _ppl:new Set(), sales:0 };
+      if (!byOpt[k]) byOpt[k] = { optionId:opt, name:it.name||'', apiCat:it.category||'', category:cat, type:typ, count:0, sales:0 };
       byOpt[k].sales += sales;
-      if (priced) byOpt[k]._ppl.add(person);                   // 人数＝ユニーク患者（コース契約者も含む＝公式と一致）
+      if (!counted.has(k)){ byOpt[k].count++; counted.add(k); }
     });
   });
   return Object.values(byOpt)
-    .map(o=>({ optionId:o.optionId, name:o.name, apiCat:o.apiCat, category:o.category, type:o.type, count:o._ppl.size, sales:o.sales }))
+    .map(o=>({ optionId:o.optionId, name:o.name, apiCat:o.apiCat, category:o.category, type:o.type, count:o.count, sales:o.sales }))
     .sort((a,b)=> b.sales - a.sales);
 }
 
@@ -844,7 +844,7 @@ async function getDashboard(clinicKey, year, month, refresh){
   const masterMap = loadMasterMap();
   const pend = {};   // 振り分け可能な未分類（optionId有り・売上≠0）だけを集める
   const byCat = aggregateClinic(values, masterMap, pend);
-  const itemsData = aggregateItems(values, masterMap);   // 施術単位の内訳（延べ人数の元）。monthly/daily の人数統一にも使う
+  const itemsData = aggregateItems(values, masterMap);   // 施術単位の内訳（件数は会計ベース＝総件数と一致）
   const categories = Object.keys(byCat).map(cat=>({
     category:cat, sales:byCat[cat].sales, count:byCat[cat].count,
     通常:byCat[cat]['通常'], CP:byCat[cat]['CP'], 媒体:byCat[cat]['媒体'],
