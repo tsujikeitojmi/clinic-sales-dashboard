@@ -884,6 +884,59 @@ async function getDashboard(clinicKey, year, month, refresh){
   };
 }
 
+/* 期間集計（別ページ /period 用）。任意の日付範囲 from〜to（YYYY-MM-DD）を _day で絞って集計。
+   月をまたいでもOK（範囲が触れる各月のキャッシュを読み、_day で範囲内だけ抽出して結合）。
+   数え方はダッシュボードと同一（aggregateClinic / aggregateItems ＝ 会計ベース件数）。 */
+async function getRange(clinicKey, from, to){
+  if (!clinicKey) throw new Error('院を指定してください');
+  const ymd = /^\d{4}-\d{2}-\d{2}$/;
+  if (!ymd.test(from||'') || !ymd.test(to||'')) throw new Error('日付は YYYY-MM-DD 形式で指定してください');
+  if (from > to){ const t=from; from=to; to=t; }   // 逆順で来ても許容
+  const masterMap = loadMasterMap();
+  // 範囲が触れる月を列挙（シリアル年月で回す）
+  const [fy,fm] = from.split('-').map(Number);
+  const [ty,tm] = to.split('-').map(Number);
+  const months = [];
+  for (let s = fy*12+(fm-1); s <= ty*12+(tm-1); s++) months.push([Math.floor(s/12), (s%12)+1]);
+  if (months.length > 25) throw new Error('期間が長すぎます（最大24か月程度にしてください）');
+  const values = [];
+  const monthsNoDay = [];   // 日付なし＝旧キャッシュ。フロントで「要再取得」案内に使う
+  for (const [y,m] of months){
+    let vs;
+    try { vs = (await getValues(clinicKey, y, m, false)).values || []; }
+    catch(e){ monthsNoDay.push(`${y}/${m}(取得失敗)`); continue; }
+    if (vs.length && !vs.some(v=>v && v._day)){ monthsNoDay.push(`${y}/${m}`); continue; }
+    for (const v of vs){ if (v && v._day && v._day>=from && v._day<=to) values.push(v); }
+  }
+  const byCat = aggregateClinic(values, masterMap, null);
+  const items = aggregateItems(values, masterMap);
+  const categories = Object.keys(byCat).map(cat=>({
+    category:cat, sales:byCat[cat].sales, count:byCat[cat].count,
+    通常:byCat[cat]['通常'], CP:byCat[cat]['CP'], 媒体:byCat[cat]['媒体'],
+    count_通常:byCat[cat]['count_通常']||0, count_CP:byCat[cat]['count_CP']||0, count_媒体:byCat[cat]['count_媒体']||0,
+  })).sort((a,b)=>{
+    const rk = c => c.category===EXCLUDED ? 2 : c.category===UNCLASSIFIED ? 1 : 0;
+    if (rk(a)!==rk(b)) return rk(a)-rk(b);
+    return b.sales - a.sales;
+  });
+  const totalSales = categories.reduce((s,c)=>s+c.sales,0);
+  const totalCount = categories.reduce((s,c)=>s+c.count,0);
+  const cnt = t => categories.reduce((s,c)=>s+(c['count_'+t]||0),0);
+  return {
+    clinic: getClinic(clinicKey).name, clinicKey, from, to, months: months.length,
+    summary: {
+      totalSales, totalCount,
+      normalSales: categories.reduce((s,c)=>s+c['通常'],0),
+      cpSales:     categories.reduce((s,c)=>s+c.CP,0),
+      mediaSales:  categories.reduce((s,c)=>s+c.媒体,0),
+      count_通常: cnt('通常'), count_CP: cnt('CP'), count_媒体: cnt('媒体'),
+      avgPrice: totalCount ? Math.round(totalSales/totalCount) : 0,
+      accounts: countVisits(values),   // 会計数（来院数）
+    },
+    categories, items, monthsNoDay,
+  };
+}
+
 // 全院のサイドバー用：キャッシュ済みの院だけ集計して返す（APIは叩かない＝軽い）
 async function getOverview(year, month){
   const masterMap = loadMasterMap();
@@ -1209,6 +1262,9 @@ const server = http.createServer(async (req, res) => {
     if (req.method==='GET' && (u.pathname==='/' || u.pathname==='/index.html')){
       return send(res, 200, fs.readFileSync(path.join(ROOT,'index.html'),'utf8'), 'text/html; charset=utf-8');
     }
+    if (req.method==='GET' && (u.pathname==='/period' || u.pathname==='/period.html')){   // 期間集計（別ページ）
+      return send(res, 200, fs.readFileSync(path.join(ROOT,'period.html'),'utf8'), 'text/html; charset=utf-8');
+    }
     if (u.pathname.startsWith('/api/')) await ensureFresh();   // 共有データを最新化（最大3秒間隔）
     if (u.pathname==='/api/config'){
       return send(res, 200, getConfig());
@@ -1216,6 +1272,9 @@ const server = http.createServer(async (req, res) => {
     if (u.pathname==='/api/dashboard'){
       const d = await getDashboard(q.clinic, +q.year, +q.month, q.refresh==='1');
       return send(res, 200, d);
+    }
+    if (u.pathname==='/api/range'){   // 期間集計（別ページ /period 用）
+      return send(res, 200, await getRange(q.clinic, q.from, q.to));
     }
     if (u.pathname==='/api/overview'){   // 全院のサイドバー用（キャッシュのみ・API叩かない）
       return send(res, 200, await getOverview(+q.year, +q.month));

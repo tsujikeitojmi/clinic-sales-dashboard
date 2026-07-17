@@ -1,0 +1,362 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>期間集計｜3院売上</title>
+<link rel="icon" href="data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCA2NCA2NCI+PHJlY3Qgd2lkdGg9IjY0IiBoZWlnaHQ9IjY0IiByeD0iMTQiIGZpbGw9IiNiNzZlNzkiLz48dGV4dCB4PSI1MCUiIHk9IjU0JSIgZm9udC1zaXplPSIzNiIgZmlsbD0iI2ZmZiIgdGV4dC1hbmNob3I9Im1pZGRsZSIgZG9taW5hbnQtYmFzZWxpbmU9ImNlbnRyYWwiIGZvbnQtZmFtaWx5PSJzYW5zLXNlcmlmIiBmb250LXdlaWdodD0iNzAwIj7pgJM8L3RleHQ+PC9zdmc+">
+<style>
+  :root{
+    --bg:#f7f5f4; --panel:#fff; --line:#ece7e6; --ink:#4a3a3d; --muted:#9a8b8e;
+    --accent:#b76e79; --accent2:#7fa99b; --gold:#c9a04a;
+    --n:#8aa0b3; --cp:#c9a04a; --m:#b76e79;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;font-family:system-ui,-apple-system,"Segoe UI","Hiragino Kaku Gothic ProN",Meiryo,sans-serif;
+    background:var(--bg);color:var(--ink);font-size:14px;line-height:1.5}
+  a{color:var(--accent);text-decoration:none} a:hover{text-decoration:underline}
+  header{background:var(--panel);border-bottom:1px solid var(--line);padding:14px 20px;
+    display:flex;align-items:center;gap:16px;flex-wrap:wrap;position:sticky;top:0;z-index:5}
+  header h1{font-size:17px;margin:0;font-weight:700}
+  header h1 .em{color:var(--accent)}
+  .back{font-size:13px;color:var(--muted)}
+  .wrap{max-width:1180px;margin:0 auto;padding:20px}
+  .controls{background:var(--panel);border:1px solid var(--line);border-radius:14px;
+    padding:16px 18px;display:flex;gap:14px;align-items:flex-end;flex-wrap:wrap;margin-bottom:14px}
+  .field{display:flex;flex-direction:column;gap:5px}
+  .field label{font-size:11px;color:var(--muted);font-weight:600}
+  .field select,.field input{border:1px solid var(--line);border-radius:10px;padding:9px 12px;
+    font-size:14px;background:#fff;color:var(--ink);min-width:150px}
+  .presets{display:flex;gap:6px;flex-wrap:wrap}
+  .presets button{border:1px solid var(--line);background:#fff;color:var(--muted);border-radius:999px;
+    padding:6px 12px;font-size:12px;cursor:pointer}
+  .presets button:hover{border-color:var(--accent);color:var(--accent)}
+  .go{background:var(--accent);color:#fff;border:none;border-radius:10px;padding:10px 22px;
+    font-size:14px;font-weight:700;cursor:pointer;box-shadow:0 2px 6px rgba(183,110,121,.3)}
+  .go:hover{filter:brightness(1.05)} .go:disabled{opacity:.5;cursor:default;box-shadow:none}
+  .rangehint{font-size:12px;color:var(--muted);margin:0 0 16px 2px}
+  .warn{background:#fff7ed;border:1px solid #f6d9b8;color:#8a5a1a;border-radius:12px;
+    padding:12px 14px;font-size:13px;margin-bottom:16px}
+
+  .layout{display:flex;gap:18px;align-items:flex-start}
+  .side{width:250px;flex-shrink:0;background:var(--panel);border:1px solid var(--line);
+    border-radius:14px;padding:8px;position:sticky;top:74px;max-height:calc(100vh - 90px);overflow:auto}
+  .main{flex:1;min-width:0}
+  .srow{display:flex;justify-content:space-between;align-items:baseline;gap:8px;
+    padding:9px 11px;border-radius:9px;cursor:pointer;transition:background .12s}
+  .srow:hover{background:#faf6f6}
+  .srow.on{background:#f4e7e9;box-shadow:inset 0 0 0 1px #e6c9cf}
+  .srow.zero{opacity:.42}
+  .srow .nm{font-size:13px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .srow .vl{text-align:right;white-space:nowrap;font-size:12px}
+  .srow .vl .c{display:block;color:var(--muted);font-size:11px}
+  .srow.total{border-bottom:1px solid var(--line);border-radius:9px 9px 0 0;margin-bottom:4px}
+  .srow.excl .nm{color:var(--muted)}
+  .sdiv{font-size:10px;color:var(--muted);padding:8px 11px 3px;font-weight:700;letter-spacing:.05em}
+
+  .cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:12px;margin-bottom:18px}
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:14px 16px}
+  .card .k{font-size:11px;color:var(--muted);font-weight:600}
+  .card .v{font-size:21px;font-weight:800;margin-top:4px;letter-spacing:.3px}
+  .card .s{font-size:11px;color:var(--muted);margin-top:2px}
+  .card.accent .v{color:var(--accent)}
+  .panel{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:16px 18px;margin-bottom:18px}
+  .panel h2{font-size:14px;margin:0 0 12px;display:flex;align-items:center;justify-content:space-between;gap:10px}
+  .panel h2 .sub{font-size:12px;color:var(--muted);font-weight:400}
+  .copy{border:1px solid var(--line);background:#fff;color:var(--muted);border-radius:8px;padding:5px 12px;font-size:12px;cursor:pointer}
+  .copy.copied{border-color:var(--accent2);color:var(--accent2)}
+  .tblwrap{overflow-x:auto}
+  table{border-collapse:collapse;width:100%;font-size:13px;min-width:520px}
+  th,td{padding:8px 10px;border-bottom:1px solid var(--line);text-align:right;white-space:nowrap}
+  th:first-child,td:first-child{text-align:left}
+  thead th{color:var(--muted);font-weight:600;font-size:12px}
+  tfoot td{font-weight:700;border-top:2px solid var(--line)}
+  .col-n{color:var(--n)} .col-cp{color:var(--cp)} .col-m{color:var(--m)}
+  .pill{display:inline-block;background:#f3edec;border-radius:999px;padding:2px 9px;font-size:12px;color:var(--ink)}
+  tr.excl td{opacity:.55}
+  .muted{color:var(--muted)}
+  .empty{padding:44px 0;text-align:center;color:var(--muted)}
+  .spin{display:inline-block;width:15px;height:15px;border:2px solid var(--line);border-top-color:var(--accent);
+    border-radius:50%;animation:sp .7s linear infinite;vertical-align:-2px;margin-right:6px}
+  @keyframes sp{to{transform:rotate(360deg)}}
+  @media(max-width:820px){ .layout{flex-direction:column} .side{width:100%;position:static;max-height:none} }
+</style>
+</head>
+<body>
+<header>
+  <h1>📅 期間<span class="em">集計</span></h1>
+  <a class="back" href="/">← 月別ダッシュボードに戻る</a>
+</header>
+
+<div class="wrap">
+  <div class="controls">
+    <div class="field"><label>院</label><select id="clinic"></select></div>
+    <div class="field"><label>開始日</label><input type="date" id="from"></div>
+    <div class="field"><label>終了日</label><input type="date" id="to"></div>
+    <button class="go" id="go" onclick="run()">集計する</button>
+    <div class="field"><label>かんたん選択</label>
+      <div class="presets">
+        <button onclick="preset('thisMonth')">今月</button>
+        <button onclick="preset('lastMonth')">先月</button>
+        <button onclick="preset('7d')">過去7日</button>
+        <button onclick="preset('30d')">過去30日</button>
+      </div>
+    </div>
+  </div>
+  <div class="rangehint" id="rangeHint"></div>
+  <div id="warnArea"></div>
+  <div id="result"><div class="empty">院と期間を選んで「集計する」を押してください。</div></div>
+</div>
+
+<script>
+const $ = id => document.getElementById(id);
+const num = n => (n==null?0:n).toLocaleString('ja-JP');
+const yen = n => '¥' + num(Math.round(n||0));
+const esc = s => String(s==null?'':s).replace(/[&<>"]/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const UNC = '★未分類', EXCL = '除外';
+const displayCat = c => String(c||'').replace(/（[^（）]*）\s*$/,'').trim() || c;
+
+let CFG = null;         // /api/config
+let TREE_MAP = {};      // カテゴリ親子マップ
+let LAST = null;        // 直近の /api/range 結果
+let CATMAP = {};        // category名 → 集計行
+let SEL = null;         // 選択中のカテゴリ（null=全体）
+
+/* ---- カテゴリツリー補助（ダッシュボードと同じ考え方） ---- */
+function buildTreeMap(nodes, par){
+  if (!par) TREE_MAP = {};
+  (nodes||[]).forEach(node=>{
+    TREE_MAP[node.name] = {name:node.name, children:node.children||[], parent:par||null};
+    if (node.children && node.children.length) buildTreeMap(node.children, node.name);
+  });
+}
+function catAndDescendants(name){
+  const node = TREE_MAP[name]; const all = [name];
+  if (node && node.children) node.children.forEach(c=>all.push(...catAndDescendants(c.name)));
+  return all;
+}
+function treeSales(name){ return catAndDescendants(name).reduce((s,n)=>s+((CATMAP[n]&&CATMAP[n].sales)||0),0); }
+function treeCount(name){ return catAndDescendants(name).reduce((s,n)=>s+((CATMAP[n]&&CATMAP[n].count)||0),0); }
+function catAllowed(name){ const arr = (CFG&&CFG.categoryClinics||{})[name]; return !arr || (LAST && arr.includes(LAST.clinicKey)); }
+
+async function api(path){
+  const r = await fetch(path, {headers:{'Accept':'application/json'}});
+  const t = await r.text(); let j;
+  try { j = JSON.parse(t); } catch(e){ throw new Error('サーバー応答が不正です'); }
+  if (!r.ok) throw new Error(j && j.error ? j.error : ('エラー '+r.status));
+  return j;
+}
+function fmt(d){ return d.getFullYear()+'-'+('0'+(d.getMonth()+1)).slice(-2)+'-'+('0'+d.getDate()).slice(-2); }
+
+function preset(kind){
+  const now = new Date(); let from, to;
+  if (kind==='thisMonth'){ from=new Date(now.getFullYear(),now.getMonth(),1); to=now; }
+  else if (kind==='lastMonth'){ from=new Date(now.getFullYear(),now.getMonth()-1,1); to=new Date(now.getFullYear(),now.getMonth(),0); }
+  else if (kind==='7d'){ to=now; from=new Date(now); from.setDate(from.getDate()-6); }
+  else if (kind==='30d'){ to=now; from=new Date(now); from.setDate(from.getDate()-29); }
+  $('from').value=fmt(from); $('to').value=fmt(to); run();
+}
+
+async function init(){
+  try {
+    CFG = await api('/api/config');
+    $('clinic').innerHTML = (CFG.clinics||[]).map(c=>`<option value="${c.key}">${esc(c.name)}</option>`).join('');
+    buildTreeMap(CFG.categoryTree);
+    const now = new Date();
+    $('from').value = fmt(new Date(now.getFullYear(), now.getMonth(), 1));
+    $('to').value   = fmt(now);
+  } catch(e){
+    $('result').innerHTML = `<div class="warn">初期化に失敗しました：${esc(e.message)}<br>ログインが必要な場合は <a href="/login">ログイン</a> してください。</div>`;
+  }
+}
+
+async function run(){
+  const clinic=$('clinic').value, from=$('from').value, to=$('to').value;
+  if (!clinic){ alert('院を選んでください'); return; }
+  if (!from || !to){ alert('開始日と終了日を選んでください'); return; }
+  $('go').disabled=true; $('warnArea').innerHTML='';
+  $('result').innerHTML = `<div class="empty"><span class="spin"></span>集計中…（初回や古い月を含む場合は少し時間がかかります）</div>`;
+  try {
+    const d = await api(`/api/range?clinic=${encodeURIComponent(clinic)}&from=${from}&to=${to}`);
+    LAST = d; SEL = null;
+    CATMAP = {}; (d.categories||[]).forEach(c=>{ CATMAP[c.category]=c; });
+    $('rangeHint').textContent = `${d.clinic}　${d.from} 〜 ${d.to}　（${d.months}か月分・会計 ${num(d.summary.accounts)}件）`;
+    if (d.monthsNoDay && d.monthsNoDay.length){
+      $('warnArea').innerHTML = `<div class="warn">⚠️ 次の月は日別データが未取得のため範囲に含められませんでした：<b>${d.monthsNoDay.map(esc).join(' / ')}</b><br>
+        月別ダッシュボードでその月を開き「🔄 最新取得」で取り直すと、次回から反映されます（金額集計には影響しません）。</div>`;
+    }
+    renderLayout();
+  } catch(e){
+    $('result').innerHTML = `<div class="warn">集計に失敗しました：${esc(e.message)}</div>`;
+  } finally { $('go').disabled=false; }
+}
+
+function renderLayout(){
+  $('result').innerHTML = `<div class="layout"><aside class="side" id="side"></aside><div class="main" id="main"></div></div>`;
+  renderSide(); renderMain();
+}
+
+function selectCat(name){ SEL = (name===SEL ? null : name); renderSide(); renderMain(); }
+
+function renderSide(){
+  const d = LAST;
+  const rows = [`<div class="srow total ${SEL===null?'on':''}" onclick="selectCat(null)">
+    <span class="nm">▣ 全体</span><span class="vl">${yen(d.summary.totalSales)}<span class="c">${num(d.summary.totalCount)}件</span></span></div>`];
+  // ツリーの親カテゴリ
+  const treeNames = new Set(Object.keys(TREE_MAP));
+  (CFG.categoryTree||[]).forEach(node=>{
+    const nm=node.name; if (!catAllowed(nm)) return;
+    const sales=treeSales(nm), cnt=treeCount(nm);
+    rows.push(`<div class="srow ${sales===0?'zero':''} ${SEL===nm?'on':''}" data-cat="${esc(nm)}" onclick="selectCat(this.dataset.cat)">
+      <span class="nm">${esc(nm)}</span><span class="vl">${yen(sales)}<span class="c">${num(cnt)}件</span></span></div>`);
+  });
+  // ツリー外のカテゴリ（物販など。★未分類・除外は別扱い）
+  const extras = (d.categories||[]).filter(c=>!treeNames.has(c.category) && c.category!==UNC && c.category!==EXCL);
+  if (extras.length){
+    rows.push('<div class="sdiv">その他カテゴリ</div>');
+    extras.forEach(c=>{
+      rows.push(`<div class="srow ${c.sales===0?'zero':''} ${SEL===c.category?'on':''}" data-cat="${esc(c.category)}" onclick="selectCat(this.dataset.cat)">
+        <span class="nm">${esc(displayCat(c.category))}</span><span class="vl">${yen(c.sales)}<span class="c">${num(c.count)}件</span></span></div>`);
+    });
+  }
+  // 除外（末尾）
+  if (CATMAP[EXCL]){
+    rows.push(`<div class="srow excl ${SEL===EXCL?'on':''}" data-cat="${EXCL}" onclick="selectCat(this.dataset.cat)" title="集計合計には含みません">
+      <span class="nm">✕ 除外</span><span class="vl">${yen(CATMAP[EXCL].sales)}<span class="c">${num(CATMAP[EXCL].count)}件</span></span></div>`);
+  }
+  $('side').innerHTML = rows.join('');
+}
+
+function renderMain(){
+  const d = LAST, s = d.summary;
+  // 選択に応じた集計値
+  let sales, count, cN, cCP, cM, sN, sCP, sM, label;
+  if (SEL===null){
+    sales=s.totalSales; count=s.totalCount; cN=s.count_通常; cCP=s.count_CP; cM=s.count_媒体;
+    sN=s.normalSales; sCP=s.cpSales; sM=s.mediaSales; label='全体';
+  } else {
+    const names = catAndDescendants(SEL);
+    const acc = (f)=> names.reduce((a,n)=> a + ((CATMAP[n]&&CATMAP[n][f])||0), 0);
+    sales=acc('sales'); count=acc('count'); cN=acc('count_通常'); cCP=acc('count_CP'); cM=acc('count_媒体');
+    sN=acc('通常'); sCP=acc('CP'); sM=acc('媒体'); label=displayCat(SEL);
+  }
+  const avg = count ? Math.round(sales/count) : 0;
+  const cards = [
+    {k:`${label} 売上`, v:yen(sales), accent:true},
+    {k:'件数', v:num(count)+' 件', s:'会計ごとの件数'},
+    {k:'平均単価', v:yen(avg), s:'売上 ÷ 件数'},
+    {k:'通常', v:num(cN)+' 件', s:yen(sN)},
+    {k:'CP', v:num(cCP)+' 件', s:yen(sCP)},
+    {k:'媒体', v:num(cM)+' 件', s:yen(sM)},
+  ];
+  let html = `<div class="cards">${cards.map(c=>`<div class="card ${c.accent?'accent':''}">
+    <div class="k">${esc(c.k)}</div><div class="v">${c.v}</div><div class="s">${c.s||''}</div></div>`).join('')}</div>`;
+
+  // 全体のときだけカテゴリ別テーブルを出す
+  if (SEL===null){
+    const cats = (d.categories||[]).filter(c=>c.category!==UNC);
+    html += `<div class="panel"><h2>カテゴリ別 <span class="sub">クリックで左メニューからも絞れます</span>
+      <button class="copy" id="copyCat" onclick="copyCat()">コピー</button></h2>
+      <div class="tblwrap"><table>
+        <thead><tr><th>カテゴリ</th><th>売上</th><th>件数</th>
+          <th class="col-n">通常売上</th><th class="col-n">通常件数</th>
+          <th class="col-cp">CP売上</th><th class="col-cp">CP件数</th>
+          <th class="col-m">媒体売上</th><th class="col-m">媒体件数</th></tr></thead>
+        <tbody>${cats.map(c=>`<tr class="${c.category===EXCL?'excl':''}" style="cursor:pointer" data-cat="${esc(c.category)}" onclick="selectCat(this.dataset.cat)">
+          <td>${esc(displayCat(c.category))}</td><td>${yen(c.sales)}</td><td>${num(c.count)}</td>
+          <td class="col-n">${yen(c['通常'])}</td><td class="col-n">${num(c.count_通常)}</td>
+          <td class="col-cp">${yen(c.CP)}</td><td class="col-cp">${num(c.count_CP)}</td>
+          <td class="col-m">${yen(c.媒体)}</td><td class="col-m">${num(c.count_媒体)}</td></tr>`).join('') || '<tr><td colspan="9" class="muted">データなし</td></tr>'}</tbody>
+        <tfoot><tr><td>合計</td><td>${yen(s.totalSales)}</td><td>${num(s.totalCount)}</td>
+          <td class="col-n">${yen(s.normalSales)}</td><td class="col-n">${num(s.count_通常)}</td>
+          <td class="col-cp">${yen(s.cpSales)}</td><td class="col-cp">${num(s.count_CP)}</td>
+          <td class="col-m">${yen(s.mediaSales)}</td><td class="col-m">${num(s.count_媒体)}</td></tr></tfoot>
+      </table></div></div>`;
+  }
+
+  // 子カテゴリ別（親を選んでいて、子カテゴリがある場合。施術の1つ上の階層）
+  if (SEL!==null){
+    const node = TREE_MAP[SEL];
+    const kids = (node && node.children || []).map(c=>c.name);
+    const mkRow = (key, lbl, names)=>{
+      const acc = f => names.reduce((a,n)=>a+((CATMAP[n]&&CATMAP[n][f])||0),0);
+      return { key, lbl, sales:acc('sales'), count:acc('count'),
+        n:acc('通常'), cp:acc('CP'), m:acc('媒体'),
+        cn:acc('count_通常'), ccp:acc('count_CP'), cm:acc('count_媒体') };
+    };
+    const rows = kids.map(k=>mkRow(k, displayCat(k), catAndDescendants(k)));
+    // 親カテゴリに直接ぶら下がる施術（子でない分）があれば1行足して合計を一致させる
+    const directHas = CATMAP[SEL] && (CATMAP[SEL].count!==0 || CATMAP[SEL].sales!==0);
+    if (directHas) rows.push(mkRow(SEL, displayCat(SEL)+'（直接）', [SEL]));
+    if (rows.length){
+      html += `<div class="panel"><h2>子カテゴリ別 <span class="sub">${esc(displayCat(SEL))}の内訳・クリックでさらに絞る</span>
+        <button class="copy" id="copySub" onclick="copySub()">コピー</button></h2>
+        <div class="tblwrap"><table>
+          <thead><tr><th>カテゴリ</th><th>売上</th><th>件数</th>
+            <th class="col-n">通常売上</th><th class="col-n">通常件数</th>
+            <th class="col-cp">CP売上</th><th class="col-cp">CP件数</th>
+            <th class="col-m">媒体売上</th><th class="col-m">媒体件数</th></tr></thead>
+          <tbody>${rows.map(r=>`<tr style="cursor:${TREE_MAP[r.key]&&(TREE_MAP[r.key].children||[]).length?'pointer':'default'}" ${r.key!==SEL?`data-cat="${esc(r.key)}" onclick="selectCat(this.dataset.cat)"`:''}>
+            <td>${esc(r.lbl)}</td><td>${yen(r.sales)}</td><td>${num(r.count)}</td>
+            <td class="col-n">${yen(r.n)}</td><td class="col-n">${num(r.cn)}</td>
+            <td class="col-cp">${yen(r.cp)}</td><td class="col-cp">${num(r.ccp)}</td>
+            <td class="col-m">${yen(r.m)}</td><td class="col-m">${num(r.cm)}</td></tr>`).join('')}</tbody>
+        </table></div></div>`;
+    }
+  }
+
+  // 施術内訳（選択中カテゴリで絞る）
+  let items = (d.items||[]);
+  if (SEL!==null){ const set=new Set(catAndDescendants(SEL)); items=items.filter(x=>set.has(x.category)); }
+  const subttl = SEL===null ? '全カテゴリ' : displayCat(SEL);
+  html += `<div class="panel"><h2>施術内訳 <span class="sub">${esc(subttl)}・${items.length}施術</span>
+    <button class="copy" id="copyItem" onclick="copyItem()">コピー</button></h2>
+    <div class="tblwrap"><table>
+      <thead><tr><th>施術名</th><th>元フォルダ（API）</th><th>カテゴリ</th><th>種別</th><th>件数</th><th>売上</th></tr></thead>
+      <tbody>${items.map(it=>`<tr>
+        <td>${esc(it.name)||'<span class="muted">(名称なし)</span>'}</td>
+        <td class="muted" style="text-align:left">${esc(it.apiCat)||'<span style="opacity:.5">—</span>'}</td>
+        <td><span class="pill">${esc(displayCat(it.category))}</span></td>
+        <td class="muted">${esc(it.type)}</td>
+        <td>${num(it.count)}</td><td>${yen(it.sales)}</td></tr>`).join('') || '<tr><td colspan="6" class="muted">この期間・カテゴリの施術はありません</td></tr>'}</tbody>
+    </table></div></div>`;
+
+  $('main').innerHTML = html;
+}
+
+/* ---- コピー ---- */
+function copyTable(rows, btnId){
+  navigator.clipboard.writeText(rows.map(r=>r.join('\t')).join('\n')).then(()=>{
+    const b=$(btnId); if(!b) return;
+    b.textContent='コピー済み'; b.classList.add('copied');
+    setTimeout(()=>{ b.textContent='コピー'; b.classList.remove('copied'); },2000);
+  });
+}
+function copyCat(){
+  if (!LAST) return;
+  const head=['カテゴリ','売上','件数','通常売上','通常件数','CP売上','CP件数','媒体売上','媒体件数'];
+  const rows=LAST.categories.filter(c=>c.category!==UNC).map(c=>[displayCat(c.category),c.sales,c.count,c['通常'],c.count_通常,c.CP,c.count_CP,c.媒体,c.count_媒体]);
+  copyTable([head,...rows],'copyCat');
+}
+function copyItem(){
+  if (!LAST) return;
+  let items=LAST.items; if (SEL!==null){ const set=new Set(catAndDescendants(SEL)); items=items.filter(x=>set.has(x.category)); }
+  const head=['施術名','元フォルダ','カテゴリ','種別','件数','売上'];
+  const rows=items.map(it=>[it.name,it.apiCat,displayCat(it.category),it.type,it.count,it.sales]);
+  copyTable([head,...rows],'copyItem');
+}
+function copySub(){
+  if (!LAST || SEL===null) return;
+  const node=TREE_MAP[SEL]; const kids=(node&&node.children||[]).map(c=>c.name);
+  const acc=(names,f)=>names.reduce((a,n)=>a+((CATMAP[n]&&CATMAP[n][f])||0),0);
+  const row=(key,lbl,names)=>[lbl,acc(names,'sales'),acc(names,'count'),acc(names,'通常'),acc(names,'count_通常'),acc(names,'CP'),acc(names,'count_CP'),acc(names,'媒体'),acc(names,'count_媒体')];
+  const rows=kids.map(k=>row(k,displayCat(k),catAndDescendants(k)));
+  if (CATMAP[SEL]&&(CATMAP[SEL].count!==0||CATMAP[SEL].sales!==0)) rows.push(row(SEL,displayCat(SEL)+'（直接）',[SEL]));
+  const head=['カテゴリ','売上','件数','通常売上','通常件数','CP売上','CP件数','媒体売上','媒体件数'];
+  copyTable([head,...rows],'copySub');
+}
+
+init();
+</script>
+</body>
+</html>
