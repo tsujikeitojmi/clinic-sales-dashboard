@@ -1265,6 +1265,9 @@ const server = http.createServer(async (req, res) => {
     if (req.method==='GET' && (u.pathname==='/period' || u.pathname==='/period.html')){   // 期間集計（別ページ）
       return send(res, 200, fs.readFileSync(path.join(ROOT,'period.html'),'utf8'), 'text/html; charset=utf-8');
     }
+    if (req.method==='GET' && u.pathname==='/master'){   // 施術マスタ（index.html を配信し、フロントが自動で開く）
+      return send(res, 200, fs.readFileSync(path.join(ROOT,'index.html'),'utf8'), 'text/html; charset=utf-8');
+    }
     if (u.pathname.startsWith('/api/')) await ensureFresh();   // 共有データを最新化（最大3秒間隔）
     if (u.pathname==='/api/config'){
       return send(res, 200, getConfig());

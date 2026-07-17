@@ -144,7 +144,9 @@
     .mchild-hd{font-size:11px;color:var(--sub);padding:8px 6px 3px;font-weight:700}
     .mrow{display:flex;align-items:center;gap:10px;padding:7px 8px;border-bottom:1px solid var(--hair)}
     .mrow:hover{background:var(--panel2)}
-    .mrow .mname{flex:1;font-size:13px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+    .mrow .mmeta{flex:1;min-width:0;display:flex;flex-direction:column;gap:1px}
+    .mrow .mname{font-size:13px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+    .mrow .mapi{font-size:11px;color:var(--sub);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
     .mrow .mcat{cursor:pointer;font-size:12px;color:var(--accent-d);background:var(--accent-tint);border:1px solid #efd9dd;border-radius:8px;padding:3px 9px;white-space:nowrap}
     .mrow .mcat:hover{filter:brightness(.98)}
     .mrow .mtype{display:inline-flex;gap:3px;background:var(--panel2);border:1px solid var(--line);border-radius:20px;padding:2px;flex:0 0 auto}
@@ -527,7 +529,7 @@ window.addEventListener('load', async () => {
     curClinic = CFG.clinics[0].key;
     buildPeriodSelectors();
     reload();
-    if (location.hash==='#master') openMaster();   // URLが #master なら施術マスタページを開く
+    if (location.pathname==='/master' || location.hash==='#master') openMaster();   // /master（旧: #master）なら施術マスタページを開く
   } catch(e){ onErr(e); }
 });
 
@@ -1494,7 +1496,7 @@ let _msTimer = null;
 async function openMaster(){
   if (!curClinic){ alert('先に院を選んでください'); return; }
   document.getElementById('masterModal').classList.add('on');
-  if (location.hash!=='#master') history.replaceState(null,'','#master');   // URLを独立ページに
+  if (location.pathname!=='/master') history.replaceState(null,'','/master');   // URLを /master に（ハッシュではなくパス）
   window.scrollTo(0,0);
   // 院セレクタ（マスタ画面内で院を切替できる）
   const csel = document.getElementById('masterClinicSel');
@@ -1511,7 +1513,7 @@ async function openMaster(){
 }
 function closeMaster(){
   document.getElementById('masterModal').classList.remove('on');
-  if (location.hash==='#master') history.replaceState(null,'',location.pathname+location.search);
+  if (location.pathname==='/master' || location.hash==='#master') history.replaceState(null,'','/'+location.search);   // ダッシュボードのURLに戻す
   masterDirty=false; reload();   // ダッシュボードを現在の院・変更内容で再集計
 }
 function switchMasterClinic(key){ if (key && key!==curClinic){ curClinic=key; openMaster(); } }
@@ -1573,8 +1575,9 @@ function masterRowHtml(r){
   const isUnc = r.category===UNC;
   const types = MASTER.types||['通常','CP','媒体'];
   const typeBtns = types.map(t=>`<button class="${(r.type||'通常')===t?'on':''}" onclick="setMasterType('${r.optionId}','${t}')">${t}</button>`).join('');
+  const api = r.apiCat ? `<span class="mapi" title="元フォルダ: ${esc(r.apiCat)}">${esc(r.apiCat)}</span>` : '';
   return `<div class="mrow ${isUnc?'unc':''}" id="mrow-${r.optionId}">
-    <span class="mname" title="${esc(r.name)}">${esc(r.name)||'(名称なし)'}</span>
+    <span class="mmeta"><span class="mname" title="${esc(r.name)}">${esc(r.name)||'(名称なし)'}</span>${api}</span>
     <span class="mcat" onclick="openCatPick('${r.optionId}')">${isUnc?'★未分類 ▾':esc(displayCat(r.category))+' ▾'}</span>
     <span class="mtype">${typeBtns}</span>
   </div>`;
