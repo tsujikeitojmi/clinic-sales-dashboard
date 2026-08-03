@@ -700,7 +700,12 @@ function suggestBestPath(name, apiCat){
 
 function suggestType(text){
   const t = String(text||'');
+  // 優先順位: 媒体名 > 【通常】タグ > CPキーワード > 既定(通常)。
+  //  新宿はフォルダ名に【通常】/媒体名を付けて種別を管理する運用。【通常】は CP キーワードより優先する
+  //  （例「【通常】ハイコックス CP」→ 通常）。無印を CP 既定にするのは新宿のみで、
+  //   起動時 migrateShinjukuFolderTypes() が担う（他院の既定は従来どおり通常）。
   if (MEDIA_KW.some(k=>t.indexOf(k)>=0)) return '媒体';
+  if (t.indexOf('通常')>=0)              return '通常';
   if (CP_KW.some(k=>t.indexOf(k)>=0))    return 'CP';
   return '通常';
 }
@@ -1377,6 +1382,109 @@ async function migrateKumaponMedia(){
   console.log('  → くまぽん種別を媒体に修正:', changed.length, '件');
 }
 
+// 新宿(CLINIC2)：元フォルダ名（API category）のタグで種別を決定する。院スタッフが medical-force 側で
+//  フォルダ名に付けるタグを唯一の基準にする（新宿のみ・他院には影響しない）。
+//   優先順位: 媒体名を含む → 媒体 ／「通常」の文字を含む → 通常 ／ どちらも無し → CP（無印の既定＝CP）
+//   ※「通常」は括弧不問（【通常】でも「通常価格」でも可）。院スタッフがフォルダ名に付ける文字を基準にする。
+//  ・種別のみ変更し、カテゴリ（施術の振り分け）は一切変更しない。物販/除外/★未分類は対象外。
+//  ・各 optionId は「最新月のフォルダ名」で判定する。medical-force は再取得時に現在のフォルダ名を返すため、
+//    新宿キャッシュを再取得しておけば現在のタグが全月に反映される。最新月が未取得(旧名)なら無印扱い＝CP。
+//  ・判定はマスタの apiCat 列ではなく新宿キャッシュの実フォルダ名で行う（apiCat 列は当てにならないため）。
+//  起動時・冪等。手動で種別を変えても次回起動でフォルダタグ基準に戻る（新宿はタグを正とする方針）。
+function shinjukuFolderType(folder){
+  const f = String(folder||'');
+  if (MEDIA_KW.some(k=>f.indexOf(k)>=0)) return '媒体';
+  if (f.indexOf('通常')>=0)              return '通常';
+  return 'CP';
+}
+async function migrateShinjukuFolderTypes(){
+  // 新宿キャッシュから optionId → 最新月の代表フォルダ名 を求める（同月内は 媒体>通常>その他 を優先）
+  const rank = f => MEDIA_KW.some(k=>String(f).indexOf(k)>=0) ? 2 : (String(f).indexOf('通常')>=0 ? 1 : 0);
+  const latest = {}; // id -> { ym, folder }
+  let files = [];
+  try { files = fs.readdirSync(CACHE_DIR).filter(f=>/^CLINIC2_\d+_\d+\.json$/.test(f)); } catch(e){ return; }
+  for (const f of files){
+    const mo = f.match(/^CLINIC2_(\d+)_(\d+)\.json$/); if (!mo) continue;
+    const ym = (+mo[1])*100 + (+mo[2]);
+    let j; try { j = JSON.parse(fs.readFileSync(path.join(CACHE_DIR, f),'utf8')); } catch(e){ continue; }
+    ((j && j.values) || []).forEach(v => (v.paymentItems||[]).forEach(it=>{
+      const id = String(it.optionId||'').trim(); if (!id) return;
+      const folder = String(it.category||'');
+      const cur = latest[id];
+      if (!cur || ym > cur.ym){ latest[id] = { ym, folder }; }
+      else if (ym === cur.ym && rank(folder) > rank(cur.folder)){ cur.folder = folder; }
+    }));
+  }
+  if (!Object.keys(latest).length) return;
+  const skip = ['物販','除外','★未分類'];
+  const changed = [];
+  MASTER_ROWS.forEach(r=>{
+    const id = String(r.optionId||'').trim();
+    if (!latest[id]) return;                       // 新宿キャッシュに無い＝他院。触らない
+    const cat = String(r.category||'').trim();
+    if (skip.includes(cat)) return;                // 物販/除外/★未分類は対象外
+    const want = shinjukuFolderType(latest[id].folder);
+    if (r.type !== want){ r.type = want; changed.push(r); }
+  });
+  if (!changed.length) return;
+  if (SB_ON){ try { await sbUpsert('mfdash_master', changed.map(toSbMaster)); } catch(e){ console.error('新宿フォルダ種別 SB書込失敗:', e.message); } }
+  localWriteMaster(MASTER_ROWS);
+  masterListInvalidAt = Date.now();   // マスタ画面キャッシュを無効化
+  console.log('  → 新宿：フォルダタグで種別を再判定:', changed.length, '件');
+}
+
+// 福岡(CLINIC3)：施術名＋フォルダ名（API category）＋登録済みapiCat のタグで種別を決定する。院スタッフが
+//  medical-force 側で施術名またはその上のカテゴリ（フォルダ名）に付けるタグを基準にする（福岡のみ・他院には影響しない）。
+//   優先順位: 媒体名を含む → 媒体 ／「通常」の文字を含む → 通常 ／ どちらも無し → CP（無印の既定＝CP）
+//   ※新宿はフォルダ名のみで判定したが、福岡は「施術名 or カテゴリ」のどちらかに含まれていれば拾う。
+//   ※「通常」は括弧不問（【通常価格】でも「通常」でも可）。
+//  ・種別のみ変更し、カテゴリ（施術の振り分け）は一切変更しない。物販/除外/★未分類は対象外。
+//  ・判定テキストは「施術名＋福岡キャッシュ全月のフォルダ名＋マスタ保存のapiCat」を連結して見る（媒体優先）。
+//    全月のフォルダ名も見るのは、medical-force 側でフォルダから【通常】タグが外れて最新月だけ無印になっても、
+//    過去月やapiCatにタグが残っていれば通常と拾えるようにするため。現在のタグを確実に反映したいときは福岡を
+//    再取得（各月 refresh=1）してからサーバー再起動する（新宿の全月再取得と同じ運用）。
+//  ・対象は福岡キャッシュに実在する optionId 限定＝他院に影響しない。
+//  起動時・冪等。手動で種別を変えても次回起動でタグ基準に戻る（福岡もタグを正とする方針）。
+function fukuokaTagType(text){
+  const t = String(text||'');
+  if (MEDIA_KW.some(k=>t.indexOf(k)>=0)) return '媒体';
+  if (t.indexOf('通常')>=0)              return '通常';
+  return 'CP';
+}
+async function migrateFukuokaTagTypes(){
+  // 福岡キャッシュから optionId → その施術が全月で持った 施術名/フォルダ名 を集約（媒体・通常タグをどこかで持てば拾う）
+  const agg = {}; // id -> Set(テキスト断片)
+  let files = [];
+  try { files = fs.readdirSync(CACHE_DIR).filter(f=>/^CLINIC3_\d+_\d+\.json$/.test(f)); } catch(e){ return; }
+  for (const f of files){
+    if (!/^CLINIC3_\d+_\d+\.json$/.test(f)) continue;
+    let j; try { j = JSON.parse(fs.readFileSync(path.join(CACHE_DIR, f),'utf8')); } catch(e){ continue; }
+    ((j && j.values) || []).forEach(v => (v.paymentItems||[]).forEach(it=>{
+      const id = String(it.optionId||'').trim(); if (!id) return;
+      const s = agg[id] || (agg[id] = new Set());
+      s.add(String(it.name||''));
+      s.add(String(it.category||''));
+    }));
+  }
+  if (!Object.keys(agg).length) return;
+  const skip = ['物販','除外','★未分類'];
+  const changed = [];
+  MASTER_ROWS.forEach(r=>{
+    const id = String(r.optionId||'').trim();
+    if (!agg[id]) return;                          // 福岡キャッシュに無い＝他院。触らない
+    const cat = String(r.category||'').trim();
+    if (skip.includes(cat)) return;                // 物販/除外/★未分類は対象外
+    const text = [...agg[id]].join(' ') + ' ' + String(r.apiCat||'');  // 全月のフォルダ名＋施術名＋登録済apiCat
+    const want = fukuokaTagType(text);
+    if (r.type !== want){ r.type = want; changed.push(r); }
+  });
+  if (!changed.length) return;
+  if (SB_ON){ try { await sbUpsert('mfdash_master', changed.map(toSbMaster)); } catch(e){ console.error('福岡タグ種別 SB書込失敗:', e.message); } }
+  localWriteMaster(MASTER_ROWS);
+  masterListInvalidAt = Date.now();   // マスタ画面キャッシュを無効化
+  console.log('  → 福岡：タグ(施術名+カテゴリ)で種別を再判定:', changed.length, '件');
+}
+
 // 親カテゴリにいた特定名の施術を子カテゴリへ移す（例: 肌育注射内のリズネ → リズネ）。起動時・冪等。
 async function migrateNameToChild(parentCat, nameKw, childCat){
   const changed = [];
@@ -1423,6 +1531,8 @@ async function migrateMergeCats(fromCats, toCat){
   try { await migrateMergeCats(['ヴェルベットスキン','スーパーヴェルベットスキン'], 'ダーマペン'); } catch(e){ console.error('ダーマペン統合失敗:', e.message); }
   try { await migrateMergeCats(['ビタミンスレッド','サーモンスレッド','オーダーメイドスレッド'], 'ショートスレッド'); } catch(e){ console.error('ショートスレッド統合失敗:', e.message); }
   try { await migrateKumaponMedia(); } catch(e){ console.error('くまぽん種別修正失敗:', e.message); }
+  try { await migrateShinjukuFolderTypes(); } catch(e){ console.error('新宿フォルダ種別修正失敗:', e.message); }
+  try { await migrateFukuokaTagTypes(); } catch(e){ console.error('福岡タグ種別修正失敗:', e.message); }
   try { await migrateNameToChild('肌育注射', 'リズネ', 'リズネ'); } catch(e){ console.error('リズネ子カテゴリ移行失敗:', e.message); }
   try { await migrateMergeCats(['CP-25'], 'ポテンツァ'); } catch(e){ console.error('CP-25統合失敗:', e.message); }
   try { await migrateUnassignCats(['ツヤ肌セット','ニキビ撃退セット']); } catch(e){ console.error('セット系未分類戻し失敗:', e.message); }

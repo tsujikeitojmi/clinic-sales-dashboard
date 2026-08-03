@@ -72,6 +72,10 @@
   thead th{color:var(--muted);font-weight:600;font-size:12px}
   tfoot td{font-weight:700;border-top:2px solid var(--line)}
   .col-n{color:var(--n)} .col-cp{color:var(--cp)} .col-m{color:var(--m)}
+  /* 施術内訳：長い施術名・フォルダ名で件数/売上が右へはみ出さないよう列幅固定＋省略表示 */
+  .tbl-item{table-layout:fixed;min-width:640px}
+  .tbl-item th,.tbl-item td{overflow:hidden;text-overflow:ellipsis}
+  .tbl-item .pill{max-width:100%;overflow:hidden;text-overflow:ellipsis;vertical-align:bottom}
   .pill{display:inline-block;background:#f3edec;border-radius:999px;padding:2px 9px;font-size:12px;color:var(--ink)}
   tr.excl td{opacity:.55}
   .muted{color:var(--muted)}
@@ -311,12 +315,13 @@ function renderMain(){
   const subttl = SEL===null ? '全カテゴリ' : displayCat(SEL);
   html += `<div class="panel"><h2>施術内訳 <span class="sub">${esc(subttl)}・${items.length}施術</span>
     <button class="copy" id="copyItem" onclick="copyItem()">コピー</button></h2>
-    <div class="tblwrap"><table>
+    <div class="tblwrap"><table class="tbl-item">
+      <colgroup><col style="width:28%"><col style="width:24%"><col style="width:15%"><col style="width:8%"><col style="width:10%"><col style="width:15%"></colgroup>
       <thead><tr><th>施術名</th><th>元フォルダ（API）</th><th>カテゴリ</th><th>種別</th><th>件数</th><th>売上</th></tr></thead>
       <tbody>${items.map(it=>`<tr>
-        <td>${esc(it.name)||'<span class="muted">(名称なし)</span>'}</td>
-        <td class="muted" style="text-align:left">${esc(it.apiCat)||'<span style="opacity:.5">—</span>'}</td>
-        <td><span class="pill">${esc(displayCat(it.category))}</span></td>
+        <td title="${esc(it.name)}">${esc(it.name)||'<span class="muted">(名称なし)</span>'}</td>
+        <td class="muted" style="text-align:left" title="${esc(it.apiCat)}">${esc(it.apiCat)||'<span style="opacity:.5">—</span>'}</td>
+        <td title="${esc(displayCat(it.category))}"><span class="pill">${esc(displayCat(it.category))}</span></td>
         <td class="muted">${esc(it.type)}</td>
         <td>${num(it.count)}</td><td>${yen(it.sales)}</td></tr>`).join('') || '<tr><td colspan="6" class="muted">この期間・カテゴリの施術はありません</td></tr>'}</tbody>
     </table></div></div>`;
