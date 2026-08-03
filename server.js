@@ -66,7 +66,7 @@ const DEFAULT_CATEGORIES = [
   'インモード','MiniFX','Forma','Vリフト',
   'ダーマペン',
   'サブシジョン',
-  'ピーリング','マッサージピール','ミラノピール','ララドクター','その他のピーリング',
+  'ピーリング','マッサージピール','ミラノリピール','ララドクター','その他のピーリング',
   'リバースピール','サリチル酸ピール',
   'ハイドラ','ケアシス','レナトスTa+','ペップビュー','エクソソーム（ケアシス）','その他の薬剤',
   '物販',
@@ -109,7 +109,7 @@ const CATEGORY_TREE = [
   { name:'ダーマペン' },
   { name:'サブシジョン' },
   { name:'ピーリング', children:[
-    { name:'マッサージピール' }, { name:'ミラノピール' }, { name:'ララドクター' }, { name:'その他のピーリング' },
+    { name:'マッサージピール' }, { name:'ミラノリピール' }, { name:'ララドクター' }, { name:'その他のピーリング' },
     { name:'リバースピール' }, { name:'サリチル酸ピール' },
   ]},
   { name:'ハイドラ' },
@@ -599,7 +599,7 @@ const CATEGORY_ALIAS = {
   'ダーマペン':['ダーマペン','ヴェルベットスキン','ヴェルベット'],
   'ピーリング':['ピーリング','ピール'],
   'マッサージピール':['マッサージピール','コスメラン','TCA'],
-  'ミラノピール':['ミラノ','ミラノリ'],
+  'ミラノリピール':['ミラノ','ミラノリ'],
   'ララドクター':['ララドクター'],
   'その他のピーリング':['ハイドラピール'],
   'リバースピール':['リバースピール','リバース'],
@@ -639,7 +639,7 @@ const CATEGORY_ALIAS = {
   'ACRS（ハイコックス）':['ACRS'],
   // ピーリング サブカテゴリ
   'マッサージピール':['マッサージピール','コスメラン','TCA'],
-  'ミラノピール':['ミラノ','ミラノリ'],
+  'ミラノリピール':['ミラノ','ミラノリ'],
   'ララドクター':['ララドクター'],
   'その他のピーリング':['ハイドラピール'],
 };
@@ -1524,12 +1524,43 @@ async function migrateMergeCats(fromCats, toCat){
   console.log('  → カテゴリ統合:', fromCats.join('/'), '→', toCat, changed.length, '件');
 }
 
+// カテゴリ名を改名（例: ミラノピール → ミラノリピール）。マスタ行・カテゴリ一覧・Supabase をまとめて改名。
+//  ・施術（optionId）や種別は変えず、カテゴリ名の表記だけを直す。カテゴリ一覧では位置を保持したまま置換。
+//  ・全院共通のカテゴリ名なので他院にも同名があれば一緒に直る（同名を分けたい運用にはしていない）。
+//  起動時・冪等（既に改名済みなら何もしない）。
+async function migrateRenameCat(from, to){
+  const changed = [];
+  MASTER_ROWS.forEach(r=>{
+    if (String(r.category||'').trim()===from){ r.category = to; changed.push(r); }
+  });
+  let catChanged = false;
+  const idx = CAT_ARR.indexOf(from);
+  if (idx >= 0){
+    if (CAT_ARR.includes(to)) CAT_ARR.splice(idx, 1);   // 改名先が既にあれば旧名を削除
+    else CAT_ARR[idx] = to;                              // 無ければ位置ごと改名
+    catChanged = true;
+  }
+  if (!changed.length && !catChanged) return;            // 既に改名済み＝冪等
+  if (SB_ON){
+    try { if (changed.length) await sbUpsert('mfdash_master', changed.map(toSbMaster)); } catch(e){ console.error('カテゴリ改名 SB(master)失敗:', e.message); }
+    if (catChanged){
+      try { await sbDeleteCat(from); } catch(e){ console.error('カテゴリ改名 SB(旧cat削除)失敗:', e.message); }
+      try { await sbUpsert('mfdash_categories', CAT_ARR.map((n,i)=>({name:n,sort:i}))); } catch(e){ console.error('カテゴリ改名 SB(cat)失敗:', e.message); }
+    }
+  }
+  localWriteMaster(MASTER_ROWS);
+  if (catChanged) localWriteCats(CAT_ARR);
+  masterListInvalidAt = Date.now();   // マスタ画面キャッシュを無効化
+  console.log('  → カテゴリ改名:', from, '→', to, '(master', changed.length, '件)');
+}
+
 (async () => {
   try { await loadState(); }
   catch(e){ console.error('保存データの読込に失敗（ローカルにフォールバック）:', e.message); MASTER_ROWS = localReadMaster(); CAT_ARR = localReadCats(); if(!CAT_ARR.length) CAT_ARR = DEFAULT_CATEGORIES.slice(); }
   try { await migrateHicox(); } catch(e){ console.error('ハイコックス付け替え失敗:', e.message); }
   try { await migrateMergeCats(['ヴェルベットスキン','スーパーヴェルベットスキン'], 'ダーマペン'); } catch(e){ console.error('ダーマペン統合失敗:', e.message); }
   try { await migrateMergeCats(['ビタミンスレッド','サーモンスレッド','オーダーメイドスレッド'], 'ショートスレッド'); } catch(e){ console.error('ショートスレッド統合失敗:', e.message); }
+  try { await migrateRenameCat('ミラノピール', 'ミラノリピール'); } catch(e){ console.error('ミラノリピール改名失敗:', e.message); }
   try { await migrateKumaponMedia(); } catch(e){ console.error('くまぽん種別修正失敗:', e.message); }
   try { await migrateShinjukuFolderTypes(); } catch(e){ console.error('新宿フォルダ種別修正失敗:', e.message); }
   try { await migrateFukuokaTagTypes(); } catch(e){ console.error('福岡タグ種別修正失敗:', e.message); }
