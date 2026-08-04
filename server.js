@@ -1006,13 +1006,31 @@ function autoPickCategory(name, apiCat, cats){
   return null;                                              // 無関係な複数該当（複合メニュー等）→ ユーザーへ
 }
 
+/* 自動振り分けで選んだルートが「子を持つ親」だったとき、葉まで降りる。
+   子が一意に決まらなければ null を返し、自動振り分けそのものを見送る（親止まりを作らない）。
+   → 判断が要るものは未分類のまま残り、TOPの振り分けカードに出てくる。 */
+function autoPickLeaf(name, apiCat, rootCat){
+  const known = readCategories();
+  let cat = rootCat;
+  for (let depth=0; depth<6; depth++){
+    const kids = getTreeChildrenOf(cat);
+    if (!kids.length) return cat;                                       // 葉に到達＝確定
+    const pick = autoPickCategory(name, apiCat, kids.filter(c=>known.includes(c)));
+    if (!pick) return null;                                             // 子が決まらない → 手動カードへ回す
+    cat = pick;
+  }
+  return null;
+}
+
 // かんたんなものを自動振り分け（scope: 'month' / 'all'）
 async function autoAssign(clinicKey, year, month, scope){
   const pending = await collectPending(clinicKey, year, month, scope);
   const cats = Array.from(ROOT_CAT_NAMES).filter(c=>readCategories().includes(c));
   const assignments = [];
   Object.values(pending).forEach(p=>{
-    const cat = autoPickCategory(p.name, p.apiCat, cats);
+    const root = autoPickCategory(p.name, p.apiCat, cats);
+    if (!root) return;
+    const cat = autoPickLeaf(p.name, p.apiCat, root);   // 子を持つ親なら葉まで降りる（降りられなければ見送り）
     if (cat) assignments.push({ optionId:p.optionId, name:p.name, apiCat:p.apiCat, category:cat, type:cat==='物販'?'通常':suggestType((p.name||'')+' '+(p.apiCat||'')) });
   });
   const res = await assignMaster(assignments);
