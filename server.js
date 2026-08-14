@@ -1404,6 +1404,8 @@ async function migrateKumaponMedia(){
 //  フォルダ名に付けるタグを唯一の基準にする（新宿のみ・他院には影響しない）。
 //   優先順位: 媒体名を含む → 媒体 ／「通常」の文字を含む → 通常 ／ どちらも無し → CP（無印の既定＝CP）
 //   ※「通常」は括弧不問（【通常】でも「通常価格」でも可）。院スタッフがフォルダ名に付ける文字を基準にする。
+//   ※媒体だけは施術名も見る（2026/08/14）。新宿では媒体名をフォルダではなく施術名に付け替えた施術があるため、
+//     施術名 or フォルダ名のどちらかに媒体名があれば媒体にする。通常/CP の判定は従来どおりフォルダ名のみ。
 //  ・種別のみ変更し、カテゴリ（施術の振り分け）は一切変更しない。物販/除外/★未分類は対象外。
 //  ・各 optionId は「最新月のフォルダ名」で判定する。medical-force は再取得時に現在のフォルダ名を返すため、
 //    新宿キャッシュを再取得しておけば現在のタグが全月に反映される。最新月が未取得(旧名)なら無印扱い＝CP。
@@ -1416,9 +1418,10 @@ function shinjukuFolderType(folder){
   return 'CP';
 }
 async function migrateShinjukuFolderTypes(){
-  // 新宿キャッシュから optionId → 最新月の代表フォルダ名 を求める（同月内は 媒体>通常>その他 を優先）
-  const rank = f => MEDIA_KW.some(k=>String(f).indexOf(k)>=0) ? 2 : (String(f).indexOf('通常')>=0 ? 1 : 0);
-  const latest = {}; // id -> { ym, folder }
+  // 新宿キャッシュから optionId → 最新月の代表フォルダ名／施術名の媒体タグ有無 を求める（同月内は 媒体>通常>その他 を優先）
+  const hasMedia = s => MEDIA_KW.some(k=>String(s).indexOf(k)>=0);
+  const rank = f => hasMedia(f) ? 2 : (String(f).indexOf('通常')>=0 ? 1 : 0);
+  const latest = {}; // id -> { ym, folder, media }   media: 最新月の施術名に媒体名が入っているか
   let files = [];
   try { files = fs.readdirSync(CACHE_DIR).filter(f=>/^CLINIC2_\d+_\d+\.json$/.test(f)); } catch(e){ return; }
   for (const f of files){
@@ -1428,9 +1431,13 @@ async function migrateShinjukuFolderTypes(){
     ((j && j.values) || []).forEach(v => (v.paymentItems||[]).forEach(it=>{
       const id = String(it.optionId||'').trim(); if (!id) return;
       const folder = String(it.category||'');
+      const media  = hasMedia(it.name||'');
       const cur = latest[id];
-      if (!cur || ym > cur.ym){ latest[id] = { ym, folder }; }
-      else if (ym === cur.ym && rank(folder) > rank(cur.folder)){ cur.folder = folder; }
+      if (!cur || ym > cur.ym){ latest[id] = { ym, folder, media }; }
+      else if (ym === cur.ym){
+        if (rank(folder) > rank(cur.folder)) cur.folder = folder;
+        if (media) cur.media = true;
+      }
     }));
   }
   if (!Object.keys(latest).length) return;
@@ -1441,7 +1448,8 @@ async function migrateShinjukuFolderTypes(){
     if (!latest[id]) return;                       // 新宿キャッシュに無い＝他院。触らない
     const cat = String(r.category||'').trim();
     if (skip.includes(cat)) return;                // 物販/除外/★未分類は対象外
-    const want = shinjukuFolderType(latest[id].folder);
+    // 施術名に媒体名が付いていれば媒体（フォルダ名に無くても拾う）。それ以外は従来どおりフォルダ名で判定
+    const want = latest[id].media ? '媒体' : shinjukuFolderType(latest[id].folder);
     if (r.type !== want){ r.type = want; changed.push(r); }
   });
   if (!changed.length) return;
