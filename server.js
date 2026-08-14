@@ -69,7 +69,7 @@ const DEFAULT_CATEGORIES = [
   'ピーリング','マッサージピール','ミラノリピール','ララドクター','その他のピーリング',
   'リバースピール','サリチル酸ピール',
   'ハイドラ','ケアシス','レナトスTa+','ペップビュー','エクソソーム（ケアシス）','その他の薬剤',
-  '物販',
+  // 「物販」は廃止（2026/08/14）。薬剤/物品/その他は kind で自動的に施術の外側へ分かれるため振り分け不要。
 ];
 
 // サイドバー用カテゴリ階層ツリー（表示・集計の親子関係のみ定義、振り分けは DEFAULT_CATEGORIES の葉名を使用）
@@ -116,7 +116,6 @@ const CATEGORY_TREE = [
   { name:'ケアシス', children:[
     { name:'レナトスTa+' }, { name:'ペップビュー' }, { name:'エクソソーム（ケアシス）' }, { name:'その他の薬剤' },
   ]},
-  { name:'物販' },
 ];
 
 // 子を持つカテゴリ名のSet（振り分け選択肢から除外する）
@@ -196,7 +195,7 @@ async function sbDeleteCat(name){
 }
 
 // 廃止カテゴリ（サイドバーから除去・Supabaseからも削除）
-const REMOVE_CATS = new Set(['水光注射','ヴェルベットスキン','スーパーヴェルベットスキン','ビタミンスレッド','サーモンスレッド','オーダーメイドスレッド','CP-25','ツヤ肌セット','ニキビ撃退セット','美容点滴・注射','高濃度ビタミンC点滴','エクソソーム点滴','NMN点滴','白玉注射','疲労回復点滴']);
+const REMOVE_CATS = new Set(['水光注射','ヴェルベットスキン','スーパーヴェルベットスキン','ビタミンスレッド','サーモンスレッド','オーダーメイドスレッド','CP-25','ツヤ肌セット','ニキビ撃退セット','美容点滴・注射','高濃度ビタミンC点滴','エクソソーム点滴','NMN点滴','白玉注射','疲労回復点滴','物販']);
 
 // --- Supabase キャッシュ（mfdash_cache テーブル） ---
 async function sbCacheGet(clinicKey, year, month){
@@ -375,12 +374,16 @@ async function fetchClinicMonth(clinic, year, month){
    コースは「契約時」ではなく「消化（来店して使った）時」に計上する。単品はそのまま。
    丸めは medical-force と同じ「切り捨て(round_down)」。端数のある物品等も1円まで公式画面と一致。
    （四捨五入だと物品などで数円の差が出ていたため 2026/07 に Math.floor へ統一） */
+/* カテゴリ別集計。★kind=施術 のみを対象にする（2026/08/14〜）。
+   薬剤/物品/その他は施術カテゴリの外側の箱として aggregateKinds() が合計だけ持つ＝MF公式画面と同じ分け方。
+   金額の計算ルール（契約は計上せず、消化額 or 単発の実額）と件数の数え方（会計ベース）は一切変更していない。 */
 function aggregateClinic(values, masterMap, pendingAccum){
   const byCat = {};
   function ensure(c){ if(!byCat[c]){ byCat[c]={count:0,sales:0,通常:0,CP:0,媒体:0,count_通常:0,count_CP:0,count_媒体:0}; } }
   values.forEach(v=>{
     const counted = new Set();
     (v.paymentItems||[]).forEach(it=>{
+      if (kindOf(it) !== '施術') return;                    // 薬剤/物品/その他はカテゴリ振り分けの対象外
       const contract = Number(it.courseContractAmountWithTax)||0;
       const digest   = Number(it.courseDigestionAmountWithTax)||0;
       const genuine  = Number(it.genuinePriceWithTax)||0;
@@ -409,6 +412,39 @@ function aggregateClinic(values, masterMap, pendingAccum){
   });
   return byCat;
 }
+
+/* MFの明細分類(kind)を 施術/薬剤/物品/その他 の4つに正規化する。
+   API は「一括割引」や空欄も返すが、MF公式画面と同じくそれらは「その他」にまとめる。 */
+const KIND_ROWS = ['施術','薬剤','物品','その他'];
+function kindOf(it){
+  const k = it && it.kind;
+  return (k==='施術'||k==='薬剤'||k==='物品') ? k : 'その他';
+}
+
+/* kind別の合計（売上・件数）。施術の中身はカテゴリ別に aggregateClinic が持つので、ここは箱の合計だけ。
+   件数の数え方は aggregateClinic と同じ会計ベース（同一会計内の同じ施術は1件）＝合算しても二重に数えない。 */
+function aggregateKinds(values){
+  const out = {}; KIND_ROWS.forEach(k=>{ out[k]={sales:0,count:0}; });
+  (values||[]).forEach(v=>{
+    const counted = new Set();
+    (v.paymentItems||[]).forEach(it=>{
+      const contract = Number(it.courseContractAmountWithTax)||0;
+      const digest   = Number(it.courseDigestionAmountWithTax)||0;
+      const genuine  = Number(it.genuinePriceWithTax)||0;
+      if (contract>0) return;
+      const sales = digest>0 ? Math.floor(digest) : Math.floor(genuine);
+      if (sales===0) return;
+      const kind = kindOf(it);
+      const key  = kind + '|' + (String(it.optionId||'').trim() || ('n:'+(it.name||'')));
+      out[kind].sales += sales;
+      if (!counted.has(key)){ out[kind].count++; counted.add(key); }
+    });
+  });
+  return out;
+}
+// kind合計を配列で（表示順は MF公式画面と同じ 施術→薬剤→物品→その他）
+function kindRows(kinds){ return KIND_ROWS.map(k=>({ kind:k, sales:kinds[k].sales, count:kinds[k].count })); }
+function kindTotal(kinds, f){ return KIND_ROWS.reduce((s,k)=>s+kinds[k][f],0); }
 
 /* 来院数（会計数）: その月の会計のうち、集計対象の明細を1つ以上持つ会計を1と数える。
    ・1会計＝1（＝1回の来院＝1人）。同じ人が別日にまた来たら別カウント（＝延べ来院数）。
@@ -440,6 +476,7 @@ function aggregateItems(values, masterMap){
   (values||[]).forEach(v=>{
     const counted = new Set();   // 会計内の重複排除（aggregateClinic の countKey と同じ考え方）
     (v.paymentItems||[]).forEach(it=>{
+      if (kindOf(it) !== '施術') return;                        // 施術の内訳なので薬剤/物品/その他は出さない
       const contract = Number(it.courseContractAmountWithTax)||0;
       const digest   = Number(it.courseDigestionAmountWithTax)||0;
       const genuine  = Number(it.genuinePriceWithTax)||0;
@@ -764,7 +801,7 @@ let trendCacheInvalidAt = 0;
 const masterListCache = new Map();   // clinicKey -> { byOpt, months, ts }
 let masterListInvalidAt = 0;
 
-async function buildMonthlyTrend(clinicKey, year, month, currentByCat){
+async function buildMonthlyTrend(clinicKey, year, month, currentByCat, currentValues){
   const cacheKey = `${clinicKey}_${year}_${month}`;
   const cached = trendCache.get(cacheKey);
   if (cached && cached.ts >= trendCacheInvalidAt) return cached.data;
@@ -776,14 +813,15 @@ async function buildMonthlyTrend(clinicKey, year, month, currentByCat){
   // 各月を並列で集計（44か月でも遅くならないように）
   const out = await Promise.all(serials.map(async s=>{
     const y = Math.floor(s/12), m = (s%12)+1;
-    let byCat;
-    if (y===year && m===month) byCat = currentByCat;
-    else { const raw = await readRaw(clinicKey, y, m); byCat = raw ? aggregateClinic(raw, masterMap, null) : null; }
+    let byCat, vals;
+    if (y===year && m===month){ byCat = currentByCat; vals = currentValues; }
+    else { const raw = await readRaw(clinicKey, y, m); vals = raw; byCat = raw ? aggregateClinic(raw, masterMap, null) : null; }
     const sum = byCat ? sumByCat(byCat) : null;
-    // 全件合計（★未分類・除外含む）= カード「累計粗利」と一致する値
-    const allSales = byCat ? Object.values(byCat).reduce((s,c)=>s+c.sales,0) : 0;
+    // 全件合計＝施術＋薬剤＋物品＋その他（★未分類・除外も含む）= カード「累計粗利」と一致する値
+    const kinds = vals ? aggregateKinds(vals) : null;
+    const allSales = kinds ? kindTotal(kinds,'sales') : 0;
     // 「件数」列は会計ベースの件数（1会計内で同じ施術×種別は1と数える）
-    const allCount = byCat ? Object.values(byCat).reduce((s,c)=>s+c.count,0) : 0;
+    const allCount = kinds ? kindTotal(kinds,'count') : 0;
     // カテゴリ別の内訳（フロントの絞り込み用）
     const cats = {};
     if (byCat) Object.keys(byCat).forEach(cat=>{
@@ -798,6 +836,7 @@ async function buildMonthlyTrend(clinicKey, year, month, currentByCat){
       通常:sum?sum.通常:0, CP:sum?sum.CP:0, 媒体:sum?sum.媒体:0,
       count_通常:sum?sum.count_通常:0, count_CP:sum?sum.count_CP:0, count_媒体:sum?sum.count_媒体:0,
       hasData:!!byCat,
+      kinds: kinds ? kindRows(kinds) : [],
       cats,
     };
   }));
@@ -822,8 +861,9 @@ function buildDailyBreakdown(values, masterMap, year, month){
     const vals = byDay[ds] || [];
     const byCat = aggregateClinic(vals, masterMap, null);
     const sum   = sumByCat(byCat);
-    const allSales = Object.values(byCat).reduce((s,c)=>s+c.sales,0);
-    const allCount = Object.values(byCat).reduce((s,c)=>s+c.count,0);   // 会計ベースの件数
+    const kinds = aggregateKinds(vals);
+    const allSales = kindTotal(kinds,'sales');                          // 施術＋薬剤＋物品＋その他
+    const allCount = kindTotal(kinds,'count');                          // 会計ベースの件数
     const cats = {};
     Object.keys(byCat).forEach(cat=>{
       if (cat===UNCLASSIFIED || cat===EXCLUDED) return;
@@ -837,6 +877,7 @@ function buildDailyBreakdown(values, masterMap, year, month){
       sales:allSales, count:allCount,
       通常:sum.通常, CP:sum.CP, 媒体:sum.媒体,
       count_通常:sum.count_通常, count_CP:sum.count_CP, count_媒体:sum.count_媒体,
+      kinds: kindRows(kinds),
       cats,
     });
   }
@@ -861,9 +902,11 @@ async function getDashboard(clinicKey, year, month, refresh){
     return b.sales - a.sales;
   });
 
-  // 合計は「除外」も含む（除外＝該当カテゴリなしの項目。★未分類と同じく売上には数える）
-  const totalSales = categories.reduce((s,c)=>s+c.sales,0);
-  const totalCount = categories.reduce((s,c)=>s+c.count,0);
+  // kind別（施術/薬剤/物品/その他）の合計。総売上は4つ全部の合計＝MF公式画面の総額と一致する。
+  const kinds = aggregateKinds(values);
+  const totalSales = kindTotal(kinds,'sales');
+  const totalCount = kindTotal(kinds,'count');
+  // 種別（通常/CP/媒体）は施術の中だけの概念。categories は kind=施術 のみ（除外・★未分類も含む）
   const cpSales    = categories.reduce((s,c)=>s+c.CP,0);
   const mediaSales = categories.reduce((s,c)=>s+c.媒体,0);
 
@@ -878,10 +921,12 @@ async function getDashboard(clinicKey, year, month, refresh){
     clinic: getClinic(clinicKey).name, clinicKey, year, month,
     cached, fetchedAt,   // データの鮮度（キャッシュか・取得時刻）
     summary:{ totalSales, totalCount, cpSales, mediaSales, avgPrice: totalCount?Math.round(totalSales/totalCount):0,
-      visitCount: countVisits(values) },   // 来院数（会計数）。金額・施術数はそのまま。
+      visitCount: countVisits(values),   // 来院数（会計数）。金額・施術数はそのまま。
+      shijutsuSales: kinds['施術'].sales, shijutsuCount: kinds['施術'].count },   // 施術だけの合計（種別内訳の母数）
+    kinds: kindRows(kinds),   // 施術/薬剤/物品/その他 の合計（内訳セクションの最上位）
     categories,
     items: itemsData,  // 施術(optionId)単位の内訳
-    monthly: await buildMonthlyTrend(clinicKey, year, month, byCat),
+    monthly: await buildMonthlyTrend(clinicKey, year, month, byCat, values),
     daily: buildDailyBreakdown(values, masterMap, year, month),
     official: { rows: aggregateByKind(values), enriched: isEnriched(values) },   // 公式画面準拠（個数/消化回数/人数/売上）
     rankings,
@@ -924,13 +969,16 @@ async function getRange(clinicKey, from, to){
     if (rk(a)!==rk(b)) return rk(a)-rk(b);
     return b.sales - a.sales;
   });
-  const totalSales = categories.reduce((s,c)=>s+c.sales,0);
-  const totalCount = categories.reduce((s,c)=>s+c.count,0);
+  const kinds = aggregateKinds(values);
+  const totalSales = kindTotal(kinds,'sales');   // 施術＋薬剤＋物品＋その他
+  const totalCount = kindTotal(kinds,'count');
   const cnt = t => categories.reduce((s,c)=>s+(c['count_'+t]||0),0);
   return {
     clinic: getClinic(clinicKey).name, clinicKey, from, to, months: months.length,
+    kinds: kindRows(kinds),
     summary: {
       totalSales, totalCount,
+      shijutsuSales: kinds['施術'].sales, shijutsuCount: kinds['施術'].count,
       normalSales: categories.reduce((s,c)=>s+c['通常'],0),
       cpSales:     categories.reduce((s,c)=>s+c.CP,0),
       mediaSales:  categories.reduce((s,c)=>s+c.媒体,0),
@@ -949,10 +997,11 @@ async function getOverview(year, month){
     const raw = await readRaw(c.key, year, month);
     if (!raw) return { key:c.key, name:c.name, color:c.color, cached:false, totalSales:0, categories:[] };
     const byCat = aggregateClinic(raw, masterMap, null);
+    const kinds = aggregateKinds(raw);
     const categories = Object.keys(byCat).map(cat=>({ category:cat, sales:byCat[cat].sales, count:byCat[cat].count }))
       .sort((a,b)=>{ const rk=x=>x.category===EXCLUDED?2:x.category===UNCLASSIFIED?1:0; if(rk(a)!==rk(b))return rk(a)-rk(b); return b.sales-a.sales; });
     return { key:c.key, name:c.name, color:c.color, cached:true,
-      totalSales: categories.reduce((s,x)=>s+x.sales,0), categories };
+      totalSales: kindTotal(kinds,'sales'), kinds: kindRows(kinds), categories };
   }));
 }
 
@@ -1031,7 +1080,7 @@ async function autoAssign(clinicKey, year, month, scope){
     const root = autoPickCategory(p.name, p.apiCat, cats);
     if (!root) return;
     const cat = autoPickLeaf(p.name, p.apiCat, root);   // 子を持つ親なら葉まで降りる（降りられなければ見送り）
-    if (cat) assignments.push({ optionId:p.optionId, name:p.name, apiCat:p.apiCat, category:cat, type:cat==='物販'?'通常':suggestType((p.name||'')+' '+(p.apiCat||'')) });
+    if (cat) assignments.push({ optionId:p.optionId, name:p.name, apiCat:p.apiCat, category:cat, type:suggestType((p.name||'')+' '+(p.apiCat||'')) });
   });
   const res = await assignMaster(assignments);
   return { assigned: res.updated };
@@ -1068,6 +1117,7 @@ async function getMasterList(clinicKey){
       const raw = await readRaw(clinicKey, y, m);
       if (!raw) continue;
       raw.forEach(v=>(v.paymentItems||[]).forEach(it=>{
+        if (kindOf(it) !== '施術') return;   // 振り分けの対象は施術だけ（薬剤/物品/その他はkindで自動集計）
         const opt = String(it.optionId||'').trim();
         if (!opt || byOpt[opt]) return;
         // aggregateClinic と同じく sales=0 のアイテムは除外（回数券消化など0円アイテムは集計対象外）
@@ -1145,6 +1195,7 @@ async function getSubPending(clinicKey, year, month, parentCat, scope){
     values.forEach(v=>{
       const counted=new Set();
       (v.paymentItems||[]).forEach(it=>{
+        if (kindOf(it) !== '施術') return;
         const contract=Number(it.courseContractAmountWithTax)||0;
         const digest=Number(it.courseDigestionAmountWithTax)||0;
         const genuine=Number(it.genuinePriceWithTax)||0;
@@ -1511,6 +1562,28 @@ async function migrateFukuokaTagTypes(){
   console.log('  → 福岡：タグ(施術名+カテゴリ)で種別を再判定:', changed.length, '件');
 }
 
+/* 「物販」カテゴリの廃止（2026/08/14）。起動時・冪等。
+   薬剤/物品/その他は kind で自動的に施術の外側に分かれるようになったため、物販カテゴリは不要になった。
+   ・kind=薬剤/物品 の行 … どのみち集計に出てこないので、振り分けを解除するだけ（実害なし）
+   ・kind=施術 の行（パック類・マンジャロ等）… 振り分けを解除して★未分類に戻し、ユーザーが施術カテゴリへ振り分ける
+   カテゴリ一覧からも「物販」を消す。種別(type)は触らない。 */
+async function migrateRetireBunpan(){
+  const changed = [];
+  MASTER_ROWS.forEach(r=>{
+    if (String(r.category||'').trim() !== '物販') return;
+    r.category = '';                     // 空＝未振り分け（loadMasterMap が拾わない＝★未分類に出る）
+    changed.push(r);
+  });
+  if (changed.length){
+    if (SB_ON){ try { await sbUpsert('mfdash_master', changed.map(toSbMaster)); } catch(e){ console.error('物販廃止 SB書込失敗:', e.message); } }
+    localWriteMaster(MASTER_ROWS);
+    masterListInvalidAt = Date.now();
+    trendCacheInvalidAt = Date.now();
+    console.log('  → 物販カテゴリを廃止し振り分けを解除:', changed.length, '件');
+  }
+  // カテゴリ一覧からの削除は REMOVE_CATS（loadState内）が行う
+}
+
 // 親カテゴリにいた特定名の施術を子カテゴリへ移す（例: 肌育注射内のリズネ → リズネ）。起動時・冪等。
 async function migrateNameToChild(parentCat, nameKw, childCat){
   const changed = [];
@@ -1594,6 +1667,7 @@ async function migrateRenameCat(from, to){
   try { await migrateMergeCats(['CP-25'], 'ポテンツァ'); } catch(e){ console.error('CP-25統合失敗:', e.message); }
   try { await migrateUnassignCats(['ツヤ肌セット','ニキビ撃退セット']); } catch(e){ console.error('セット系未分類戻し失敗:', e.message); }
   try { await migrateMergeCats(['美容点滴・注射','高濃度ビタミンC点滴','エクソソーム点滴','NMN点滴','白玉注射','疲労回復点滴'], EXCLUDED); } catch(e){ console.error('美容点滴・注射 除外移行失敗:', e.message); }
+  try { await migrateRetireBunpan(); } catch(e){ console.error('物販カテゴリ廃止失敗:', e.message); }
   if (SB_ON) migrateCacheToSb().catch(e=>console.error('キャッシュ移行失敗:', e.message));
   server.listen(PORT, () => {
     const ok = CLINIC_LIST.filter(c=>process.env[c.key+'_CLIENT_ID']).map(c=>c.name);

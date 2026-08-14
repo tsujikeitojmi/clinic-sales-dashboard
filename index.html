@@ -253,6 +253,9 @@
     .sum-tbl th.col-n{color:var(--normal)}
     .sum-tbl th.col-cp{color:var(--cp)}
     .sum-tbl th.col-m{color:var(--media)}
+    /* 内訳テーブル：施術/薬剤/物品/その他 の大区分行と、その下のカテゴリ行 */
+    #catTable .kind-row td{font-weight:700;background:rgba(0,0,0,.035)}
+    #catTable .kind-child td:first-child{padding-left:22px;font-weight:400}
     #catTable .col-n{color:var(--normal)}
     #catTable .col-cp{color:var(--cp)}
     #catTable .col-m{color:var(--media)}
@@ -351,12 +354,12 @@
     <div class="grid2">
       <div class="panel">
         <div style="display:flex;align-items:center;gap:12px;margin-bottom:12px">
-          <h3 style="margin:0">カテゴリ別 明細（種別内訳）</h3>
+          <h3 style="margin:0">内訳（施術／薬剤／物品／その他）</h3>
           <button class="copy-btn" id="copyCatBtn" onclick="copyCatTable()">コピー</button>
         </div>
         <table id="catTable">
           <thead>
-            <tr><th>カテゴリ</th><th>売上</th><th>件数</th>
+            <tr><th>区分／カテゴリ</th><th>売上</th><th>件数</th>
               <th class="col-n">通常売上</th><th class="col-n">通常件数</th>
               <th class="col-cp">CP売上</th><th class="col-cp">CP件数</th>
               <th class="col-m">媒体売上</th><th class="col-m">媒体件数</th></tr>
@@ -1243,8 +1246,8 @@ function copyDailyTable(){
 
 /* ====== ランキング ====== */
 function renderRank(){
-  // 親施術（ルートカテゴリ）に集約してランキング（★未分類・除外・物販は除く）
-  const agg = catsByRoot().filter(c=>c.category!=='★未分類' && c.category!=='除外' && c.category!=='物販');
+  // 親施術（ルートカテゴリ）に集約してランキング（★未分類・除外は除く）。対象は施術のみ
+  const agg = catsByRoot().filter(c=>c.category!=='★未分類' && c.category!=='除外');
   const draw = (elId, key, fmt)=>{
     const list = agg.slice().sort((a,b)=>b[key]-a[key]).slice(0,10)
       .map(c=>({label:c.category, value:c[key]}));
@@ -1277,28 +1280,59 @@ function catsByRoot(){
 }
 
 let catTableData = [];
+/* 内訳テーブル：まず MF と同じ 施術 / 薬剤 / 物品 / その他 に大きく分け、
+   施術の中だけカテゴリ別（通常/CP/媒体）の内訳を並べる。薬剤・物品・その他は合計行のみ。 */
 function renderCatTable(){
-  catTableData = catsByRoot()
+  const cats = catsByRoot()
     .filter(c=>c.category!=='★未分類')   // 未分類はまだ振り分け前なので明細に出さない
     .sort((a,b)=>{
       const rk = c => c.category==='除外' ? 1 : 0;   // 除外は末尾へ
       if (rk(a)!==rk(b)) return rk(a)-rk(b);
       return b.sales - a.sales;
     });
-  const tb = document.querySelector('#catTable tbody');
-  tb.innerHTML = catTableData.map(c=>`
-    <tr class="${c.category==='★未分類'?'unc':''}">
+  const kinds = DATA.kinds || [];
+  const kindOf = k => kinds.find(x=>x.kind===k) || {sales:0,count:0};
+  const sh = kindOf('施術');
+
+  // コピー用のフラットなデータ（見出し行＝施術/薬剤/物品/その他、その下に施術のカテゴリ）
+  catTableData = [];
+  const html = [];
+  const blank = '<td class="col-n"></td><td class="col-n"></td><td class="col-cp"></td><td class="col-cp"></td><td class="col-m"></td><td class="col-m"></td>';
+
+  // 施術（合計行 → カテゴリ内訳）
+  html.push(`<tr class="kind-row"><td>施術</td><td>${yen(sh.sales)}</td><td>${num(sh.count)}</td>
+    <td class="col-n">${yen(cats.reduce((s,c)=>s+c.通常,0))}</td><td class="col-n">${num(cats.reduce((s,c)=>s+c.count_通常,0))}</td>
+    <td class="col-cp">${yen(cats.reduce((s,c)=>s+c.CP,0))}</td><td class="col-cp">${num(cats.reduce((s,c)=>s+c.count_CP,0))}</td>
+    <td class="col-m">${yen(cats.reduce((s,c)=>s+c.媒体,0))}</td><td class="col-m">${num(cats.reduce((s,c)=>s+c.count_媒体,0))}</td></tr>`);
+  catTableData.push({label:'施術', sales:sh.sales, count:sh.count,
+    通常:cats.reduce((s,c)=>s+c.通常,0), count_通常:cats.reduce((s,c)=>s+c.count_通常,0),
+    CP:cats.reduce((s,c)=>s+c.CP,0), count_CP:cats.reduce((s,c)=>s+c.count_CP,0),
+    媒体:cats.reduce((s,c)=>s+c.媒体,0), count_媒体:cats.reduce((s,c)=>s+c.count_媒体,0)});
+  cats.forEach(c=>{
+    html.push(`<tr class="kind-child">
       <td>${esc(displayCat(c.category))}</td><td>${yen(c.sales)}</td><td>${num(c.count)}</td>
       <td class="col-n">${yen(c.通常)}</td><td class="col-n">${num(c.count_通常)}</td>
       <td class="col-cp">${yen(c.CP)}</td><td class="col-cp">${num(c.count_CP)}</td>
       <td class="col-m">${yen(c.媒体)}</td><td class="col-m">${num(c.count_媒体)}</td>
-    </tr>`).join('');
+    </tr>`);
+    catTableData.push({label:'　'+displayCat(c.category), sales:c.sales, count:c.count,
+      通常:c.通常, count_通常:c.count_通常, CP:c.CP, count_CP:c.count_CP, 媒体:c.媒体, count_媒体:c.count_媒体});
+  });
+
+  // 薬剤 / 物品 / その他 は合計行だけ（通常/CP/媒体の概念なし）
+  ['薬剤','物品','その他'].forEach(k=>{
+    const v = kindOf(k);
+    html.push(`<tr class="kind-row"><td>${k}</td><td>${yen(v.sales)}</td><td>${num(v.count)}</td>${blank}</tr>`);
+    catTableData.push({label:k, sales:v.sales, count:v.count, 通常:'', count_通常:'', CP:'', count_CP:'', 媒体:'', count_媒体:''});
+  });
+
+  document.querySelector('#catTable tbody').innerHTML = html.join('');
 }
 
 function copyCatTable(){
-  const header = ['カテゴリ','売上','件数','通常売上','通常件数','CP売上','CP件数','媒体売上','媒体件数'].join('\t');
+  const header = ['区分/カテゴリ','売上','件数','通常売上','通常件数','CP売上','CP件数','媒体売上','媒体件数'].join('\t');
   const rows = (catTableData||[]).map(c=>[
-    displayCat(c.category), c.sales, c.count, c.通常, c.count_通常, c.CP, c.count_CP, c.媒体, c.count_媒体,
+    c.label, c.sales, c.count, c.通常, c.count_通常, c.CP, c.count_CP, c.媒体, c.count_媒体,
   ].join('\t'));
   navigator.clipboard.writeText([header,...rows].join('\n')).then(()=>{
     const btn = document.getElementById('copyCatBtn');
@@ -1475,7 +1509,7 @@ async function assignCat(cat){
   const r = PENDING.rows[curIdx];
   document.getElementById('pendingMsg').textContent='保存中…';
   try {
-    await apiPost('/api/assign', {assignments:[{optionId:r.optionId, name:r.name, apiCat:r.apiCat, category:cat, type:cat==='物販'?'通常':curType}]});
+    await apiPost('/api/assign', {assignments:[{optionId:r.optionId, name:r.name, apiCat:r.apiCat, category:cat, type:curType}]});
     assignedCount++;
     if (cat!=='除外' && !knownCats.includes(cat)) knownCats.push(cat);
     document.getElementById('pendingMsg').textContent=`「${cat}」に振り分け（計${assignedCount}件）`;
@@ -1630,7 +1664,7 @@ function pickMasterCat(cat){
 function catPickBack(){ catPickDrill=(TREE_MAP[catPickDrill]||{}).parent||null; renderCatPick(); }
 async function assignMasterCat(cat){
   const opt=catPickOpt, r=MASTER.rows.find(x=>x.optionId===opt); if(!r) return;
-  const type = cat==='物販'?'通常':(r.type||'通常');
+  const type = r.type||'通常';
   document.getElementById('catPickMsg').textContent='保存中…';
   try {
     await apiPost('/api/assign', {assignments:[{optionId:opt, name:r.name, apiCat:r.apiCat, category:cat, type}]});
@@ -1654,7 +1688,7 @@ function closeEdit(){ document.getElementById('editModal').classList.remove('on'
 
 function renderEdit(){
   const it = editIt;
-  const isBuhan = it.category === '物販';
+  const isBuhan = false;   // 物販カテゴリは廃止（2026/08/14）。施術は全て種別を持つ
   document.getElementById('editCard').innerHTML = `
     <div class="nm">${esc(it.name)||'<span class="muted">(名称なし)</span>'}</div>
     <div class="meta">
@@ -1677,7 +1711,7 @@ function setEditType(t){
 async function pickEdit(cat){
   document.getElementById('editMsg').textContent='保存中…';
   try {
-    await apiPost('/api/assign', {assignments:[{optionId:editIt.optionId, name:editIt.name, apiCat:editIt.apiCat, category:cat, type:cat==='物販'?'通常':editType}]});
+    await apiPost('/api/assign', {assignments:[{optionId:editIt.optionId, name:editIt.name, apiCat:editIt.apiCat, category:cat, type:editType}]});
     closeEdit(); reload();
   } catch(e){ onErr(e); }
 }
