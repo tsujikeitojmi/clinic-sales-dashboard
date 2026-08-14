@@ -810,9 +810,7 @@ function renderOfficial(){
     body.innerHTML = `<tr><td colspan="5" class="muted" style="text-align:center;padding:16px">再取得が必要です</td></tr>`;
     return;
   }
-  note.innerHTML = '個数=数量ベース（単発＋契約）／消化回数＝コース消化の数量／人数＝ユニーク患者数。'
-    + '<b>売上・人数はMF画面と一致</b>しますが、<b>個数と消化回数の内訳はズレることがあります</b>'
-    + '（合計「個数＋消化回数」は一致）。MF内部では消化扱いでもAPIが消化額0で返す明細があり、API項目からは再現できないためです。';
+  note.textContent = '個数=数量ベース（単発＋契約）／消化回数＝コース消化の数量／人数＝ユニーク患者数';
   const rows = o.rows || [];
   const tot = rows.reduce((a,r)=>({kosuu:a.kosuu+r.kosuu, shouka:a.shouka+r.shouka, ninzuu:a.ninzuu+r.ninzuu, sales:a.sales+r.sales}), {kosuu:0,shouka:0,ninzuu:0,sales:0});
   const line = (label,r,cls='',ninzuu)=>`<tr class="${cls}">
