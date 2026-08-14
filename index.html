@@ -386,9 +386,14 @@
           <h3 style="margin:0">内訳（施術／薬剤／物品／その他）</h3>
           <button class="copy-btn" id="copyCatBtn" onclick="copyCatTable()">コピー</button>
         </div>
+        <div class="muted" style="font-size:11px;margin-bottom:8px">
+          件数＝会計ごとの回数／個数＝数量の合計／人数＝ユニーク患者数。
+          <b>人数はカテゴリをまたぐと足せません</b>（複数のカテゴリを受けた人が二重に数えられるため、
+          カテゴリ行の人数を足しても施術行の人数には一致しません）。
+        </div>
         <table id="catTable">
           <thead>
-            <tr><th>区分／カテゴリ</th><th>売上</th><th>件数</th>
+            <tr><th>区分／カテゴリ</th><th>売上</th><th>件数</th><th>個数</th><th>人数</th>
               <th class="col-n">通常売上</th><th class="col-n">通常件数</th>
               <th class="col-cp">CP売上</th><th class="col-cp">CP件数</th>
               <th class="col-m">媒体売上</th><th class="col-m">媒体件数</th></tr>
@@ -757,7 +762,7 @@ function renderCards(){
         <div class="card-sm">
           <div class="k"><i class="${KIND_STYLE[k.kind]}"></i>${k.kind}</div>
           <div class="v">${yen(k.sales)}</div>
-          <div class="s">${num(k.count)} 件</div>
+          <div class="s">${num(k.count)} 件 ・ ${num(k.ppl)} 人</div>
         </div>`).join('')}
     </div>
     <div class="cards-lbl">施術の内訳（通常／CP／媒体）</div>
@@ -1039,12 +1044,14 @@ function renderCards2(){
   // 件数（種別別）＝会計ベース。売上と同じ母集団なので 売上÷件数＝単価 が成立する。
   const cnt    = t => matched.reduce((s,c)=>s+(c['count_'+t]||0),0);
   const cntAll = matched.reduce((s,c)=>s+(c.count||0),0);
+  const qtyAll = matched.reduce((s,c)=>s+(c.qty||0),0);
+  const pplAll = matched.reduce((s,c)=>s+(c.ppl||0),0);   // ※子カテゴリを両方受けた人は二重。目安
   // カテゴリは施術の中だけの概念なので、kind区分は出さず「そのカテゴリ＋種別内訳」の2段にする
   const shSales = (DATA.kinds||[]).reduce((a,k)=>a+(k.kind==='施術'?k.sales:0),0);
   document.getElementById('cards').innerHTML = `
     <div class="card-hero">
       <div class="k">${esc(displayCat(ec))}（施術の中のカテゴリ）</div>
-      <div><span class="v">${yen(sales)}</span><span class="cnt">${num(cntAll)} 件</span></div>
+      <div><span class="v">${yen(sales)}</span><span class="cnt">${num(cntAll)} 件 ・ ${num(qtyAll)} 個 ・ ${num(pplAll)} 人</span></div>
       <div class="kbar-lgd" style="margin-top:10px">施術売上 ${yen(shSales)} の <b style="color:var(--txt)">${pct(sales,shSales)}%</b></div>
     </div>
     <div class="cards-lbl">種別の内訳（通常／CP／媒体）</div>
@@ -1322,10 +1329,11 @@ function renderRank(){
 /* DATA.categories を親施術（ルートカテゴリ）ごとに集約（子カテゴリの数値を親に合算） */
 function catsByRoot(){
   const roots = new Map();
-  const ensure = root=>{ let r=roots.get(root); if(!r){ r={category:root, sales:0, count:0, count_通常:0, count_CP:0, count_媒体:0, 通常:0, CP:0, 媒体:0}; roots.set(root,r);} return r; };
+  const ensure = root=>{ let r=roots.get(root); if(!r){ r={category:root, sales:0, count:0, qty:0, ppl:0, count_通常:0, count_CP:0, count_媒体:0, 通常:0, CP:0, 媒体:0}; roots.set(root,r);} return r; };
   (DATA.categories||[]).forEach(c=>{
     const r = ensure(getRootCat(c.category));
-    r.sales += c.sales||0; r.count += c.count||0;
+    r.sales += c.sales||0; r.count += c.count||0; r.qty += c.qty||0;
+    r.ppl += c.ppl||0;   // ※人数は本来足せない（子カテゴリを両方受けた人は二重）。目安として合算する
     r.通常 += c['通常']||0; r.CP += c.CP||0; r.媒体 += c.媒体||0;
     r.count_通常 += c['count_通常']||0; r.count_CP += c['count_CP']||0; r.count_媒体 += c['count_媒体']||0;
   });
@@ -1352,40 +1360,40 @@ function renderCatTable(){
   const html = [];
   const blank = '<td class="col-n"></td><td class="col-n"></td><td class="col-cp"></td><td class="col-cp"></td><td class="col-m"></td><td class="col-m"></td>';
 
-  // 施術（合計行 → カテゴリ内訳）
-  html.push(`<tr class="kind-row"><td>施術</td><td>${yen(sh.sales)}</td><td>${num(sh.count)}</td>
+  // 施術（合計行 → カテゴリ内訳）。施術行の人数は実人数（kind集計のユニーク患者数）
+  html.push(`<tr class="kind-row"><td>施術</td><td>${yen(sh.sales)}</td><td>${num(sh.count)}</td><td>${num(sh.qty)}</td><td>${num(sh.ppl)}</td>
     <td class="col-n">${yen(cats.reduce((s,c)=>s+c.通常,0))}</td><td class="col-n">${num(cats.reduce((s,c)=>s+c.count_通常,0))}</td>
     <td class="col-cp">${yen(cats.reduce((s,c)=>s+c.CP,0))}</td><td class="col-cp">${num(cats.reduce((s,c)=>s+c.count_CP,0))}</td>
     <td class="col-m">${yen(cats.reduce((s,c)=>s+c.媒体,0))}</td><td class="col-m">${num(cats.reduce((s,c)=>s+c.count_媒体,0))}</td></tr>`);
-  catTableData.push({label:'施術', sales:sh.sales, count:sh.count,
+  catTableData.push({label:'施術', sales:sh.sales, count:sh.count, qty:sh.qty, ppl:sh.ppl,
     通常:cats.reduce((s,c)=>s+c.通常,0), count_通常:cats.reduce((s,c)=>s+c.count_通常,0),
     CP:cats.reduce((s,c)=>s+c.CP,0), count_CP:cats.reduce((s,c)=>s+c.count_CP,0),
     媒体:cats.reduce((s,c)=>s+c.媒体,0), count_媒体:cats.reduce((s,c)=>s+c.count_媒体,0)});
   cats.forEach(c=>{
     html.push(`<tr class="kind-child">
-      <td>${esc(displayCat(c.category))}</td><td>${yen(c.sales)}</td><td>${num(c.count)}</td>
+      <td>${esc(displayCat(c.category))}</td><td>${yen(c.sales)}</td><td>${num(c.count)}</td><td>${num(c.qty)}</td><td>${num(c.ppl)}</td>
       <td class="col-n">${yen(c.通常)}</td><td class="col-n">${num(c.count_通常)}</td>
       <td class="col-cp">${yen(c.CP)}</td><td class="col-cp">${num(c.count_CP)}</td>
       <td class="col-m">${yen(c.媒体)}</td><td class="col-m">${num(c.count_媒体)}</td>
     </tr>`);
-    catTableData.push({label:'　'+displayCat(c.category), sales:c.sales, count:c.count,
+    catTableData.push({label:'　'+displayCat(c.category), sales:c.sales, count:c.count, qty:c.qty, ppl:c.ppl,
       通常:c.通常, count_通常:c.count_通常, CP:c.CP, count_CP:c.count_CP, 媒体:c.媒体, count_媒体:c.count_媒体});
   });
 
   // 薬剤 / 物品 / その他 は合計行だけ（通常/CP/媒体の概念なし）
   ['薬剤','物品','その他'].forEach(k=>{
     const v = kindOf(k);
-    html.push(`<tr class="kind-row"><td>${k}</td><td>${yen(v.sales)}</td><td>${num(v.count)}</td>${blank}</tr>`);
-    catTableData.push({label:k, sales:v.sales, count:v.count, 通常:'', count_通常:'', CP:'', count_CP:'', 媒体:'', count_媒体:''});
+    html.push(`<tr class="kind-row"><td>${k}</td><td>${yen(v.sales)}</td><td>${num(v.count)}</td><td>${num(v.qty)}</td><td>${num(v.ppl)}</td>${blank}</tr>`);
+    catTableData.push({label:k, sales:v.sales, count:v.count, qty:v.qty, ppl:v.ppl, 通常:'', count_通常:'', CP:'', count_CP:'', 媒体:'', count_媒体:''});
   });
 
   document.querySelector('#catTable tbody').innerHTML = html.join('');
 }
 
 function copyCatTable(){
-  const header = ['区分/カテゴリ','売上','件数','通常売上','通常件数','CP売上','CP件数','媒体売上','媒体件数'].join('\t');
+  const header = ['区分/カテゴリ','売上','件数','個数','人数','通常売上','通常件数','CP売上','CP件数','媒体売上','媒体件数'].join('\t');
   const rows = (catTableData||[]).map(c=>[
-    c.label, c.sales, c.count, c.通常, c.count_通常, c.CP, c.count_CP, c.媒体, c.count_媒体,
+    c.label, c.sales, c.count, c.qty, c.ppl, c.通常, c.count_通常, c.CP, c.count_CP, c.媒体, c.count_媒体,
   ].join('\t'));
   navigator.clipboard.writeText([header,...rows].join('\n')).then(()=>{
     const btn = document.getElementById('copyCatBtn');

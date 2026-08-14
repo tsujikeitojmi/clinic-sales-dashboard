@@ -379,9 +379,12 @@ async function fetchClinicMonth(clinic, year, month){
    金額の計算ルール（契約は計上せず、消化額 or 単発の実額）と件数の数え方（会計ベース）は一切変更していない。 */
 function aggregateClinic(values, masterMap, pendingAccum){
   const byCat = {};
-  function ensure(c){ if(!byCat[c]){ byCat[c]={count:0,sales:0,通常:0,CP:0,媒体:0,count_通常:0,count_CP:0,count_媒体:0}; } }
+  // qty=数量(quantity)の合計＝「個数」／_ppl=ユニーク患者(visitorId)の集合＝「人数」。
+  // 人数はカテゴリをまたぐと足し算できない（同じ人が複数カテゴリを受けると二重に数える）。
+  function ensure(c){ if(!byCat[c]){ byCat[c]={count:0,sales:0,qty:0,_ppl:new Set(),通常:0,CP:0,媒体:0,count_通常:0,count_CP:0,count_媒体:0}; } }
   values.forEach(v=>{
     const counted = new Set();
+    const vis = v.visitorId || null;
     (v.paymentItems||[]).forEach(it=>{
       if (kindOf(it) !== '施術') return;                    // 薬剤/物品/その他はカテゴリ振り分けの対象外
       const contract = Number(it.courseContractAmountWithTax)||0;
@@ -406,6 +409,8 @@ function aggregateClinic(values, masterMap, pendingAccum){
       if (!TYPES_NEW.includes(typ)) typ='通常';
       ensure(cat);
       byCat[cat].sales += sales; byCat[cat][typ] += sales;
+      byCat[cat].qty += Number(it.quantity)||0;              // 個数＝数量の合計
+      if (vis) byCat[cat]._ppl.add(vis);                     // 人数＝ユニーク患者（カテゴリ内で重複排除）
       const countKey = `${opt||('n:'+it.name)}|${cat}|${typ}`;
       if (!counted.has(countKey)){ byCat[cat].count++; byCat[cat]['count_'+typ]++; counted.add(countKey); }
     });
@@ -424,9 +429,10 @@ function kindOf(it){
 /* kind別の合計（売上・件数）。施術の中身はカテゴリ別に aggregateClinic が持つので、ここは箱の合計だけ。
    件数の数え方は aggregateClinic と同じ会計ベース（同一会計内の同じ施術は1件）＝合算しても二重に数えない。 */
 function aggregateKinds(values){
-  const out = {}; KIND_ROWS.forEach(k=>{ out[k]={sales:0,count:0}; });
+  const out = {}; KIND_ROWS.forEach(k=>{ out[k]={sales:0,count:0,qty:0,_ppl:new Set()}; });
   (values||[]).forEach(v=>{
     const counted = new Set();
+    const vis = v.visitorId || null;
     (v.paymentItems||[]).forEach(it=>{
       const contract = Number(it.courseContractAmountWithTax)||0;
       const digest   = Number(it.courseDigestionAmountWithTax)||0;
@@ -437,13 +443,15 @@ function aggregateKinds(values){
       const kind = kindOf(it);
       const key  = kind + '|' + (String(it.optionId||'').trim() || ('n:'+(it.name||'')));
       out[kind].sales += sales;
+      out[kind].qty   += Number(it.quantity)||0;   // 個数＝数量の合計
+      if (vis) out[kind]._ppl.add(vis);            // 人数＝ユニーク患者
       if (!counted.has(key)){ out[kind].count++; counted.add(key); }
     });
   });
   return out;
 }
 // kind合計を配列で（表示順は MF公式画面と同じ 施術→薬剤→物品→その他）
-function kindRows(kinds){ return KIND_ROWS.map(k=>({ kind:k, sales:kinds[k].sales, count:kinds[k].count })); }
+function kindRows(kinds){ return KIND_ROWS.map(k=>({ kind:k, sales:kinds[k].sales, count:kinds[k].count, qty:kinds[k].qty, ppl:kinds[k]._ppl.size })); }
 function kindTotal(kinds, f){ return KIND_ROWS.reduce((s,k)=>s+kinds[k][f],0); }
 
 /* 来院数（会計数）: その月の会計のうち、集計対象の明細を1つ以上持つ会計を1と数える。
@@ -893,6 +901,7 @@ async function getDashboard(clinicKey, year, month, refresh){
   const itemsData = aggregateItems(values, masterMap);   // 施術単位の内訳（件数は会計ベース＝総件数と一致）
   const categories = Object.keys(byCat).map(cat=>({
     category:cat, sales:byCat[cat].sales, count:byCat[cat].count,
+    qty:byCat[cat].qty||0, ppl:byCat[cat]._ppl ? byCat[cat]._ppl.size : 0,   // 個数／人数（人数は足し算できない）
     通常:byCat[cat]['通常'], CP:byCat[cat]['CP'], 媒体:byCat[cat]['媒体'],
     count_通常:byCat[cat]['count_通常']||0, count_CP:byCat[cat]['count_CP']||0, count_媒体:byCat[cat]['count_媒体']||0,
   })).sort((a,b)=>{
@@ -962,6 +971,7 @@ async function getRange(clinicKey, from, to){
   const items = aggregateItems(values, masterMap);
   const categories = Object.keys(byCat).map(cat=>({
     category:cat, sales:byCat[cat].sales, count:byCat[cat].count,
+    qty:byCat[cat].qty||0, ppl:byCat[cat]._ppl ? byCat[cat]._ppl.size : 0,
     通常:byCat[cat]['通常'], CP:byCat[cat]['CP'], 媒体:byCat[cat]['媒体'],
     count_通常:byCat[cat]['count_通常']||0, count_CP:byCat[cat]['count_CP']||0, count_媒体:byCat[cat]['count_媒体']||0,
   })).sort((a,b)=>{
