@@ -1452,9 +1452,12 @@ async function migrateKumaponMedia(){
 }
 
 // 新宿(CLINIC2)：medical-force 側の情報だけで種別を機械的に決める（新宿のみ・他院には影響しない）。
-//   ① 施術名 or フォルダ名に媒体名を含む → 媒体
+//   ① MFの媒体フォルダ（カンナムオンニ/トリビュー/キレイパス/くまポン/HPB の【明細用】）配下 → 媒体
+//      または 施術名 or フォルダ名に媒体名を含む → 媒体
 //   ② MFの「今月のキャンペーン」フォルダ配下にある → CP（operations の階層で判定）
 //   ③ それ以外 → 通常
+//  ・媒体はフォルダ階層と名前キーワードの「どちらか一方でも該当すれば媒体」。片方だけにすると
+//    名前の付け忘れ（媒体フォルダ内なのに施術名もフォルダ名も「パック」だけ等）を取りこぼす。
 //  ・2026/08/14 に「無印＝CP」から「CPを明示的に定義し、それ以外は通常」へ方針転換した。
 //    以前はフォルダ名のタグ（【通常】の有無）で判定していたが、キャンペーンかどうかは
 //    フォルダ名からは分からないものが多い（例「ポテンツァジュべルック」「ボトックス」「3回」）。
@@ -1501,6 +1504,7 @@ async function migrateShinjukuFolderTypes(){
   if (!Object.keys(latest).length) return;
   // CPの定義＝MFの「今月のキャンペーン」フォルダ配下（階層で判定）。取得できていなければ null
   const cpIds = folderIdsUnder('CLINIC2', /今月のキャンペーン/);
+  const mediaIds = shinjukuMediaFolderIds();   // 媒体トップフォルダ配下（無条件で媒体）
   // 除外カテゴリも「種別だけ」は判定する（カテゴリは除外のまま）。除外はカテゴリ別内訳には出ないが
   // カード上部の通常/CP/媒体には乗るため、ここを揃えないとMFの数字と合わなくなる。
   const skip = ['物販','★未分類'];
@@ -1510,10 +1514,12 @@ async function migrateShinjukuFolderTypes(){
     if (!latest[id]) return;                       // 新宿キャッシュに無い＝他院。触らない
     const cat = String(r.category||'').trim();
     if (skip.includes(cat)) return;                // 物販/除外/★未分類は対象外
-    // ①施術名/フォルダ名に媒体名 → 媒体　②「今月のキャンペーン」配下 → CP　③それ以外 → 通常
-    // CPフォルダが取得できていない間（初回起動など）は従来のフォルダ名判定にフォールバックする
-    const want = latest[id].media ? '媒体'
-               : (cpIds ? (cpIds.has(OPS_TREE['CLINIC2'].optToCat.get(id)) ? 'CP' : '通常')
+    // ①媒体トップフォルダ配下 or 施術名/フォルダ名に媒体名 → 媒体
+    // ②「今月のキャンペーン」配下 → CP　③それ以外 → 通常
+    // フォルダ階層が未取得のとき（初回起動など）は従来のフォルダ名タグ判定にフォールバックする
+    const fid = OPS_TREE['CLINIC2'] ? OPS_TREE['CLINIC2'].optToCat.get(id) : null;
+    const want = (latest[id].media || (mediaIds && mediaIds.has(fid))) ? '媒体'
+               : (cpIds ? (cpIds.has(fid) ? 'CP' : '通常')
                         : shinjukuFolderType(latest[id].folder));
     if (r.type !== want){ r.type = want; changed.push(r); }
   });
@@ -1589,6 +1595,26 @@ function folderIdsUnder(clinicKey, rootNameRe){
   if (!root) return null;
   const ids = new Set([root.id]);
   t.cats.forEach(c=>{ if (String(c.path).split('/').includes(root.id)) ids.add(c.id); });
+  return ids;
+}
+
+/* 新宿の媒体トップフォルダ。この配下にある施術は無条件で媒体にする。
+   カンナムオンニとくまポンは施術を直接持たない中間フォルダのため operation_category に名前が出ず、
+   名前検索では引けないのでIDを直接持つ（配下フォルダの顔ぶれで特定済み。2026/08/14）。
+   トリビュー/キレイパス/ホットペッパービューティーは「◯◯【明細用　予約時使用不可】」という
+   名前で引けるので、フォルダを作り直してIDが変わっても名前側で拾える。 */
+const SHINJUKU_MEDIA_ROOT_IDS = [
+  '99a002cd-4773-4359-8e17-0e482d334f65',   // カンナムオンニ【明細用　予約時使用不可】
+  'd6c4b886-8bea-483c-bbfb-61a405cbb16b',   // くまポン【明細用　予約時使用不可】
+];
+function shinjukuMediaFolderIds(){
+  const t = OPS_TREE['CLINIC2'];
+  if (!t) return null;
+  const roots = new Set(SHINJUKU_MEDIA_ROOT_IDS);
+  // 名前で引ける媒体トップフォルダも足す（【明細用】が付いた媒体名フォルダ）
+  t.cats.forEach(c=>{ if (MEDIA_KW.some(k=>c.name.indexOf(k)>=0) && c.name.indexOf('【明細用')>=0) roots.add(c.id); });
+  const ids = new Set(roots);
+  t.cats.forEach(c=>{ const seg = String(c.path).split('/'); if ([...roots].some(r=>seg.includes(r))) ids.add(c.id); });
   return ids;
 }
 
