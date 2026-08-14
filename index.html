@@ -113,7 +113,6 @@
     .card-sm.t-m{border-left:3px solid var(--media)}
     @media(max-width:900px){.cards-row.c4,.cards-row.c3{grid-template-columns:repeat(2,1fr)}}
 
-    .grid2{display:grid;grid-template-columns:1.6fr 1fr;gap:16px}
     .panel{background:var(--panel);border:1px solid var(--line);border-radius:18px;padding:18px 20px;margin-bottom:16px;box-shadow:var(--sh)}
     .panel h3{margin:0 0 14px;font-size:14px;font-weight:700}
     .chart-wrap{position:relative;height:300px}
@@ -283,8 +282,21 @@
     .sum-tbl th.col-cp{color:var(--cp)}
     .sum-tbl th.col-m{color:var(--media)}
     /* 内訳テーブル：施術/薬剤/物品/その他 の大区分行と、その下のカテゴリ行 */
-    #catTable .kind-row td{font-weight:700;background:rgba(0,0,0,.035)}
-    #catTable .kind-child td:first-child{padding-left:22px;font-weight:400}
+    .tbl-wrap{overflow-x:auto}
+    .tbl-toggle{display:inline-flex;align-items:center;gap:6px;font-size:11px;color:var(--sub);cursor:pointer;user-select:none}
+    .tbl-toggle input{accent-color:var(--accent);cursor:pointer}
+    #catTable{font-size:13px}
+    #catTable th,#catTable td{padding:8px 12px}
+    #catTable .c-name{text-align:left;min-width:190px;position:sticky;left:0;background:var(--panel);z-index:1}
+    #catTable td.c-name{text-align:left}
+    #catTable .grp{border-left:1px solid var(--line)}          /* 種別グループの区切り */
+    #catTable .kind-row td{font-weight:700;background:#f6f1f2}
+    #catTable .kind-row td.c-name{background:#f6f1f2}
+    #catTable .kind-child td:first-child{padding-left:26px;font-weight:400}
+    #catTable tbody tr:hover td{background:var(--accent-tint)}
+    #catTable .muted-zero{color:var(--sub);opacity:.5}
+    .rank-grid{display:grid;grid-template-columns:1fr 1fr;gap:22px}
+    @media(max-width:900px){.rank-grid{grid-template-columns:1fr}}
     #catTable .col-n{color:var(--normal)}
     #catTable .col-cp{color:var(--cp)}
     #catTable .col-m{color:var(--media)}
@@ -353,7 +365,7 @@
     <!-- 公式集計（medical-force準拠）：個数・消化回数・人数・売上 を 施術/薬剤/物品/その他 別に -->
     <div class="panel" id="officialPanel">
       <div style="display:flex;align-items:center;gap:10px;margin-bottom:12px;flex-wrap:wrap">
-        <h3 style="margin:0">公式集計（medical-force画面と一致）</h3>
+        <h3 style="margin:0">公式集計（medical-force準拠）</h3>
         <span class="muted" id="officialNote" style="font-size:11px"></span>
       </div>
       <table id="officialTable">
@@ -380,33 +392,41 @@
       <div class="sum-tbl-wrap"><div id="dailyTableDiv"></div></div>
     </div>
 
-    <div class="grid2">
-      <div class="panel">
-        <div style="display:flex;align-items:center;gap:12px;margin-bottom:12px">
-          <h3 style="margin:0">内訳（施術／薬剤／物品／その他）</h3>
-          <button class="copy-btn" id="copyCatBtn" onclick="copyCatTable()">コピー</button>
-        </div>
-        <div class="muted" style="font-size:11px;margin-bottom:8px">
-          件数＝会計ごとの回数／個数＝数量の合計／人数＝ユニーク患者数。
-          <b>人数はカテゴリをまたぐと足せません</b>（複数のカテゴリを受けた人が二重に数えられるため、
-          カテゴリ行の人数を足しても施術行の人数には一致しません）。
-        </div>
+    <div class="panel" id="catPanel">
+      <div style="display:flex;align-items:center;gap:12px;margin-bottom:10px;flex-wrap:wrap">
+        <h3 style="margin:0">内訳（施術／薬剤／物品／その他）</h3>
+        <button class="copy-btn" id="copyCatBtn" onclick="copyCatTable()">コピー</button>
+        <label class="tbl-toggle"><input type="checkbox" id="catTypeCols" onchange="renderCatTable()"> 種別内訳（通常／CP／媒体）も表示</label>
+      </div>
+      <div class="muted" style="font-size:11px;margin-bottom:10px">
+        件数＝会計ごとの回数／個数＝数量の合計／人数＝ユニーク患者数。
+        <b>人数はカテゴリをまたぐと足せません</b>（複数のカテゴリを受けた人が二重に数えられるため、
+        カテゴリ行の人数を足しても施術行の人数には一致しません）。
+      </div>
+      <div class="tbl-wrap">
         <table id="catTable">
           <thead>
-            <tr><th>区分／カテゴリ</th><th>売上</th><th>件数</th><th>個数</th><th>人数</th>
-              <th class="col-n">通常売上</th><th class="col-n">通常件数</th>
-              <th class="col-cp">CP売上</th><th class="col-cp">CP件数</th>
-              <th class="col-m">媒体売上</th><th class="col-m">媒体件数</th></tr>
+            <tr><th class="c-name">区分／カテゴリ</th><th>売上</th><th>件数</th><th>個数</th><th>人数</th>
+              <th class="col-n grp">通常売上</th><th class="col-n">通常件数</th>
+              <th class="col-cp grp">CP売上</th><th class="col-cp">CP件数</th>
+              <th class="col-m grp">媒体売上</th><th class="col-m">媒体件数</th></tr>
           </thead>
           <tbody></tbody>
         </table>
       </div>
-      <div class="panel">
-        <h3>ランキング</h3>
-        <div class="rank-lbl">粗利(売上) TOP</div>
-        <div class="rank" id="rankSales"></div>
-        <div class="rank-lbl" style="margin-top:16px">件数 TOP</div>
-        <div class="rank" id="rankCount"></div>
+    </div>
+
+    <div class="panel" id="rankPanel">
+      <h3 style="margin:0 0 12px">ランキング</h3>
+      <div class="rank-grid">
+        <div>
+          <div class="rank-lbl">粗利(売上) TOP</div>
+          <div class="rank" id="rankSales"></div>
+        </div>
+        <div>
+          <div class="rank-lbl">件数 TOP</div>
+          <div class="rank" id="rankCount"></div>
+        </div>
       </div>
     </div>
 
@@ -790,7 +810,9 @@ function renderOfficial(){
     body.innerHTML = `<tr><td colspan="5" class="muted" style="text-align:center;padding:16px">再取得が必要です</td></tr>`;
     return;
   }
-  note.textContent = '個数=数量ベース（単発＋契約）／消化回数＝コース消化の数量／人数＝ユニーク患者数';
+  note.innerHTML = '個数=数量ベース（単発＋契約）／消化回数＝コース消化の数量／人数＝ユニーク患者数。'
+    + '<b>売上・人数はMF画面と一致</b>しますが、<b>個数と消化回数の内訳はズレることがあります</b>'
+    + '（合計「個数＋消化回数」は一致）。MF内部では消化扱いでもAPIが消化額0で返す明細があり、API項目からは再現できないためです。';
   const rows = o.rows || [];
   const tot = rows.reduce((a,r)=>({kosuu:a.kosuu+r.kosuu, shouka:a.shouka+r.shouka, ninzuu:a.ninzuu+r.ninzuu, sales:a.sales+r.sales}), {kosuu:0,shouka:0,ninzuu:0,sales:0});
   const line = (label,r,cls='',ninzuu)=>`<tr class="${cls}">
@@ -1020,7 +1042,8 @@ function selectSubCat2(cat){
 
 function toggleDetailPanels(){
   const hide = curCat ? 'none' : '';
-  document.querySelector('.grid2').style.display = hide;
+  document.getElementById('catPanel').style.display = hide;
+  document.getElementById('rankPanel').style.display = hide;
   // 月別サマリーは常に表示（カテゴリ選択中はそのカテゴリの件数・金額）
   document.getElementById('monthlyPanel').style.display = '';
   // 日別サマリーも常に表示（月別と同じ挙動）
@@ -1358,23 +1381,30 @@ function renderCatTable(){
   // コピー用のフラットなデータ（見出し行＝施術/薬剤/物品/その他、その下に施術のカテゴリ）
   catTableData = [];
   const html = [];
-  const blank = '<td class="col-n"></td><td class="col-n"></td><td class="col-cp"></td><td class="col-cp"></td><td class="col-m"></td><td class="col-m"></td>';
+  // 種別内訳（通常/CP/媒体）の6列はチェックボックスで表示切替。既定は非表示で横幅を抑える
+  const showType = !!(document.getElementById('catTypeCols')||{}).checked;
+  document.querySelectorAll('#catTable thead th.col-n, #catTable thead th.col-cp, #catTable thead th.col-m')
+    .forEach(th=>{ th.style.display = showType ? '' : 'none'; });
+  const T = (cls, v) => showType ? `<td class="${cls}">${v}</td>` : '';
+  const blank = showType
+    ? '<td class="col-n grp"></td><td class="col-n"></td><td class="col-cp grp"></td><td class="col-cp"></td><td class="col-m grp"></td><td class="col-m"></td>'
+    : '';
 
   // 施術（合計行 → カテゴリ内訳）。施術行の人数は実人数（kind集計のユニーク患者数）
-  html.push(`<tr class="kind-row"><td>施術</td><td>${yen(sh.sales)}</td><td>${num(sh.count)}</td><td>${num(sh.qty)}</td><td>${num(sh.ppl)}</td>
-    <td class="col-n">${yen(cats.reduce((s,c)=>s+c.通常,0))}</td><td class="col-n">${num(cats.reduce((s,c)=>s+c.count_通常,0))}</td>
-    <td class="col-cp">${yen(cats.reduce((s,c)=>s+c.CP,0))}</td><td class="col-cp">${num(cats.reduce((s,c)=>s+c.count_CP,0))}</td>
-    <td class="col-m">${yen(cats.reduce((s,c)=>s+c.媒体,0))}</td><td class="col-m">${num(cats.reduce((s,c)=>s+c.count_媒体,0))}</td></tr>`);
+  html.push(`<tr class="kind-row"><td class="c-name">施術</td><td>${yen(sh.sales)}</td><td>${num(sh.count)}</td><td>${num(sh.qty)}</td><td>${num(sh.ppl)}</td>
+    ${T('col-n grp', yen(cats.reduce((s,c)=>s+c.通常,0)))}${T('col-n', num(cats.reduce((s,c)=>s+c.count_通常,0)))}
+    ${T('col-cp grp', yen(cats.reduce((s,c)=>s+c.CP,0)))}${T('col-cp', num(cats.reduce((s,c)=>s+c.count_CP,0)))}
+    ${T('col-m grp', yen(cats.reduce((s,c)=>s+c.媒体,0)))}${T('col-m', num(cats.reduce((s,c)=>s+c.count_媒体,0)))}</tr>`);
   catTableData.push({label:'施術', sales:sh.sales, count:sh.count, qty:sh.qty, ppl:sh.ppl,
     通常:cats.reduce((s,c)=>s+c.通常,0), count_通常:cats.reduce((s,c)=>s+c.count_通常,0),
     CP:cats.reduce((s,c)=>s+c.CP,0), count_CP:cats.reduce((s,c)=>s+c.count_CP,0),
     媒体:cats.reduce((s,c)=>s+c.媒体,0), count_媒体:cats.reduce((s,c)=>s+c.count_媒体,0)});
   cats.forEach(c=>{
     html.push(`<tr class="kind-child">
-      <td>${esc(displayCat(c.category))}</td><td>${yen(c.sales)}</td><td>${num(c.count)}</td><td>${num(c.qty)}</td><td>${num(c.ppl)}</td>
-      <td class="col-n">${yen(c.通常)}</td><td class="col-n">${num(c.count_通常)}</td>
-      <td class="col-cp">${yen(c.CP)}</td><td class="col-cp">${num(c.count_CP)}</td>
-      <td class="col-m">${yen(c.媒体)}</td><td class="col-m">${num(c.count_媒体)}</td>
+      <td class="c-name">${esc(displayCat(c.category))}</td><td>${yen(c.sales)}</td><td>${num(c.count)}</td><td>${num(c.qty)}</td><td>${num(c.ppl)}</td>
+      ${T('col-n grp', yen(c.通常))}${T('col-n', num(c.count_通常))}
+      ${T('col-cp grp', yen(c.CP))}${T('col-cp', num(c.count_CP))}
+      ${T('col-m grp', yen(c.媒体))}${T('col-m', num(c.count_媒体))}
     </tr>`);
     catTableData.push({label:'　'+displayCat(c.category), sales:c.sales, count:c.count, qty:c.qty, ppl:c.ppl,
       通常:c.通常, count_通常:c.count_通常, CP:c.CP, count_CP:c.count_CP, 媒体:c.媒体, count_媒体:c.count_媒体});
@@ -1383,7 +1413,7 @@ function renderCatTable(){
   // 薬剤 / 物品 / その他 は合計行だけ（通常/CP/媒体の概念なし）
   ['薬剤','物品','その他'].forEach(k=>{
     const v = kindOf(k);
-    html.push(`<tr class="kind-row"><td>${k}</td><td>${yen(v.sales)}</td><td>${num(v.count)}</td><td>${num(v.qty)}</td><td>${num(v.ppl)}</td>${blank}</tr>`);
+    html.push(`<tr class="kind-row"><td class="c-name">${k}</td><td>${yen(v.sales)}</td><td>${num(v.count)}</td><td>${num(v.qty)}</td><td>${num(v.ppl)}</td>${blank}</tr>`);
     catTableData.push({label:k, sales:v.sales, count:v.count, qty:v.qty, ppl:v.ppl, 通常:'', count_通常:'', CP:'', count_CP:'', 媒体:'', count_媒体:''});
   });
 
