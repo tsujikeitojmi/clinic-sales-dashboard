@@ -84,6 +84,35 @@
     .card.accent{background:linear-gradient(135deg,#fff, var(--accent-tint));border-color:#efd9dd}
     .card.accent .v{color:var(--accent-d)}
 
+    /* 階層カード：総売上（大） → kind4区分 → 施術の種別内訳 */
+    .cards-stack{display:flex;flex-direction:column;gap:12px;margin-bottom:18px}
+    .card-hero{background:linear-gradient(135deg,#fff,var(--accent-tint));border:1px solid #efd9dd;
+      border-radius:18px;padding:18px 20px;box-shadow:var(--sh)}
+    .card-hero .k{color:var(--sub);font-size:12px;font-weight:600;margin-bottom:6px}
+    .card-hero .v{font-size:32px;font-weight:700;color:var(--accent-d);font-variant-numeric:tabular-nums;letter-spacing:.01em}
+    .card-hero .cnt{font-size:14px;font-weight:600;color:var(--sub);margin-left:12px}
+    /* 構成比バー（施術/薬剤/物品/その他） */
+    .kbar{display:flex;height:9px;border-radius:5px;overflow:hidden;margin:12px 0 8px;background:var(--line)}
+    .kbar span{display:block;height:100%}
+    .kbar-lgd{display:flex;gap:16px;flex-wrap:wrap;font-size:11px;color:var(--sub)}
+    .kbar-lgd i{display:inline-block;width:8px;height:8px;border-radius:2px;margin-right:5px;vertical-align:-1px}
+    .k-shijutsu{background:#b76e79}.k-yakuzai{background:#c9a35b}.k-buppin{background:#7fa99b}.k-sonota{background:#b9adb0}
+    /* 小カード列 */
+    .cards-row{display:grid;gap:12px}
+    .cards-row.c4{grid-template-columns:repeat(4,1fr)}
+    .cards-row.c3{grid-template-columns:repeat(3,1fr)}
+    .card-sm{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:13px 15px;box-shadow:var(--sh-sm)}
+    .card-sm .k{color:var(--sub);font-size:11px;font-weight:600;margin-bottom:6px;display:flex;align-items:center}
+    .card-sm .k i{display:inline-block;width:8px;height:8px;border-radius:2px;margin-right:6px}
+    .card-sm .v{font-size:20px;font-weight:700;font-variant-numeric:tabular-nums}
+    .card-sm .s{color:var(--sub);font-size:11px;margin-top:5px;font-variant-numeric:tabular-nums}
+    .card-sm .s b{color:var(--txt);font-weight:600}
+    .cards-lbl{font-size:11px;color:var(--sub);font-weight:600;margin:4px 0 -4px 2px}
+    .card-sm.t-n{border-left:3px solid var(--normal)}
+    .card-sm.t-cp{border-left:3px solid var(--cp)}
+    .card-sm.t-m{border-left:3px solid var(--media)}
+    @media(max-width:900px){.cards-row.c4,.cards-row.c3{grid-template-columns:repeat(2,1fr)}}
+
     .grid2{display:grid;grid-template-columns:1.6fr 1fr;gap:16px}
     .panel{background:var(--panel);border:1px solid var(--line);border-radius:18px;padding:18px 20px;margin-bottom:16px;box-shadow:var(--sh)}
     .panel h3{margin:0 0 14px;font-size:14px;font-weight:700}
@@ -309,7 +338,7 @@
     </div>
 
     <div class="subcat-bar" id="subcatBar"></div>
-    <div class="cards" id="cards"></div>
+    <div class="cards-stack" id="cards"></div>
 
 
     <!-- 月別グラフは全幅（過去12か月） -->
@@ -693,30 +722,53 @@ function updateFreshness(){
   el.textContent = `${DATA.cached?'📦 キャッシュ':'🔄 最新'}・${t.getMonth()+1}/${t.getDate()} ${z(t.getHours())}:${z(t.getMinutes())}取得`;
 }
 
-/* ====== カード ====== */
+/* ====== カード（階層型） ======
+   総売上（＝施術＋薬剤＋物品＋その他）→ kind4区分 → 施術の中の 通常/CP/媒体 の3段。
+   通常/CP/媒体 は施術の中だけの概念なので、構成比の分母は総売上ではなく施術売上にする。 */
+const KIND_STYLE = { '施術':'k-shijutsu', '薬剤':'k-yakuzai', '物品':'k-buppin', 'その他':'k-sonota' };
+function pct(v, base){ return base ? (Math.round(v/base*1000)/10) : 0; }
+
 function renderCards(){
-  const cats  = DATA.categories || [];
-  const sales  = cats.reduce((a,c)=>a+c.sales,0);
+  const cats   = DATA.categories || [];
+  const kinds  = DATA.kinds || [];
+  const kindOf = k => kinds.find(x=>x.kind===k) || {sales:0,count:0};
+  const sum    = DATA.summary || {};
+  const total  = sum.totalSales || 0, totalCnt = sum.totalCount || 0;
+  const shSales = kindOf('施術').sales, shCnt = kindOf('施術').count;
   const normal = cats.reduce((a,c)=>a+(c['通常']||0),0);
   const CP     = cats.reduce((a,c)=>a+(c.CP||0),0);
   const media  = cats.reduce((a,c)=>a+(c.媒体||0),0);
-  // 件数は会計ベース（売上と同じ母集団）。売上と同じく★未分類・除外も含めた全件合計。
+  // 件数は会計ベース（売上と同じ母集団）＝ 売上÷件数 が単価として成立する
   const cnt    = t => cats.reduce((a,c)=>a+(c['count_'+t]||0),0);
-  const cntAll = cats.reduce((a,c)=>a+(c.count||0),0);
-  const cards = [
-    {k:'全体 売上', v:yen(sales)},
-    {k:'通常 売上', v:yen(normal)},
-    {k:'CP 売上',   v:yen(CP)},
-    {k:'媒体 売上', v:yen(media)},
-    {k:'全体 件数', v:num(cntAll)+' 件', s:'会計ごとの件数'},
-    {k:'通常 件数', v:num(cnt('通常'))+' 件'},
-    {k:'CP 件数',   v:num(cnt('CP'))+' 件'},
-    {k:'媒体 件数', v:num(cnt('媒体'))+' 件'},
-  ];
-  document.getElementById('cards').innerHTML = cards.map(c=>`
-    <div class="card ${c.accent?'accent':''}">
-      <div class="k">${c.k}</div><div class="v">${c.v}</div><div class="s">${c.s||''}</div>
-    </div>`).join('');
+
+  // 構成比バー：マイナス（返金等）は幅0として扱う
+  const bars = kinds.filter(k=>k.sales>0);
+  const barBase = bars.reduce((a,k)=>a+k.sales,0) || 1;
+
+  document.getElementById('cards').innerHTML = `
+    <div class="card-hero">
+      <div class="k">総売上（施術＋薬剤＋物品＋その他）</div>
+      <div><span class="v">${yen(total)}</span><span class="cnt">${num(totalCnt)} 件</span></div>
+      <div class="kbar">${bars.map(k=>`<span class="${KIND_STYLE[k.kind]}" style="width:${k.sales/barBase*100}%" title="${k.kind} ${yen(k.sales)}"></span>`).join('')}</div>
+      <div class="kbar-lgd">${kinds.map(k=>`<span><i class="${KIND_STYLE[k.kind]}"></i>${k.kind} ${pct(k.sales,barBase)}%</span>`).join('')}</div>
+    </div>
+    <div class="cards-row c4">
+      ${kinds.map(k=>`
+        <div class="card-sm">
+          <div class="k"><i class="${KIND_STYLE[k.kind]}"></i>${k.kind}</div>
+          <div class="v">${yen(k.sales)}</div>
+          <div class="s">${num(k.count)} 件</div>
+        </div>`).join('')}
+    </div>
+    <div class="cards-lbl">施術の内訳（通常／CP／媒体）</div>
+    <div class="cards-row c3">
+      <div class="card-sm t-n"><div class="k">通常</div><div class="v">${yen(normal)}</div>
+        <div class="s">${num(cnt('通常'))} 件 ・ 施術の <b>${pct(normal,shSales)}%</b></div></div>
+      <div class="card-sm t-cp"><div class="k">CP</div><div class="v">${yen(CP)}</div>
+        <div class="s">${num(cnt('CP'))} 件 ・ 施術の <b>${pct(CP,shSales)}%</b></div></div>
+      <div class="card-sm t-m"><div class="k">媒体</div><div class="v">${yen(media)}</div>
+        <div class="s">${num(cnt('媒体'))} 件 ・ 施術の <b>${pct(media,shSales)}%</b></div></div>
+    </div>`;
 }
 
 /* ====== 公式集計（medical-force画面と一致）: 個数・消化回数・人数・売上 ====== */
@@ -987,22 +1039,23 @@ function renderCards2(){
   // 件数（種別別）＝会計ベース。売上と同じ母集団なので 売上÷件数＝単価 が成立する。
   const cnt    = t => matched.reduce((s,c)=>s+(c['count_'+t]||0),0);
   const cntAll = matched.reduce((s,c)=>s+(c.count||0),0);
-  const cards = [
-    // 上段：売上（合計／通常／CP／媒体）
-    {k:`${displayCat(ec)} 売上`, v:yen(sales)},
-    {k:'通常 売上', v:yen(normal)},
-    {k:'CP 売上',   v:yen(CP)},
-    {k:'媒体 売上', v:yen(media)},
-    // 下段：件数（合計／通常／CP／媒体）
-    {k:`${displayCat(ec)} 件数`, v:num(cntAll)+' 件', s:'会計ごとの件数'},
-    {k:'通常 件数', v:num(cnt('通常'))+' 件'},
-    {k:'CP 件数',   v:num(cnt('CP'))+' 件'},
-    {k:'媒体 件数', v:num(cnt('媒体'))+' 件'},
-  ];
-  document.getElementById('cards').innerHTML = cards.map(c=>`
-    <div class="card ${c.accent?'accent':''}">
-      <div class="k">${c.k}</div><div class="v">${c.v}</div><div class="s">${c.s||''}</div>
-    </div>`).join('');
+  // カテゴリは施術の中だけの概念なので、kind区分は出さず「そのカテゴリ＋種別内訳」の2段にする
+  const shSales = (DATA.kinds||[]).reduce((a,k)=>a+(k.kind==='施術'?k.sales:0),0);
+  document.getElementById('cards').innerHTML = `
+    <div class="card-hero">
+      <div class="k">${esc(displayCat(ec))}（施術の中のカテゴリ）</div>
+      <div><span class="v">${yen(sales)}</span><span class="cnt">${num(cntAll)} 件</span></div>
+      <div class="kbar-lgd" style="margin-top:10px">施術売上 ${yen(shSales)} の <b style="color:var(--txt)">${pct(sales,shSales)}%</b></div>
+    </div>
+    <div class="cards-lbl">種別の内訳（通常／CP／媒体）</div>
+    <div class="cards-row c3">
+      <div class="card-sm t-n"><div class="k">通常</div><div class="v">${yen(normal)}</div>
+        <div class="s">${num(cnt('通常'))} 件 ・ <b>${pct(normal,sales)}%</b></div></div>
+      <div class="card-sm t-cp"><div class="k">CP</div><div class="v">${yen(CP)}</div>
+        <div class="s">${num(cnt('CP'))} 件 ・ <b>${pct(CP,sales)}%</b></div></div>
+      <div class="card-sm t-m"><div class="k">媒体</div><div class="v">${yen(media)}</div>
+        <div class="s">${num(cnt('媒体'))} 件 ・ <b>${pct(media,sales)}%</b></div></div>
+    </div>`;
 }
 
 /* ====== 月別グラフ ====== */
