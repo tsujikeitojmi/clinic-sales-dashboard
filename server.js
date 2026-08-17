@@ -1662,6 +1662,10 @@ async function migrateFukuokaTagTypes(){
     }));
   }
   if (!Object.keys(agg).length) return;
+  // 媒体フォルダ配下は migrateFukuokaMedia が媒体に決めるので、ここでは触らない。
+  // 触ると「タグ判定でCPに戻す → フォルダ判定で媒体に戻す」を毎起動くり返して冪等でなくなる。
+  const mediaIds = fukuokaMediaFolderIds();
+  const t = OPS_TREE['CLINIC3'];
   const skip = ['物販','除外','★未分類'];
   const changed = [];
   MASTER_ROWS.forEach(r=>{
@@ -1669,6 +1673,7 @@ async function migrateFukuokaTagTypes(){
     if (!agg[id]) return;                          // 福岡キャッシュに無い＝他院。触らない
     const cat = String(r.category||'').trim();
     if (skip.includes(cat)) return;                // 物販/除外/★未分類は対象外
+    if (mediaIds && t && mediaIds.has(t.optToCat.get(id))) return;   // 媒体フォルダ配下は対象外
     const text = [...agg[id]].join(' ') + ' ' + String(r.apiCat||'');  // 全月のフォルダ名＋施術名＋登録済apiCat
     const want = fukuokaTagType(text);
     if (r.type !== want){ r.type = want; changed.push(r); }
@@ -1760,6 +1765,70 @@ async function migrateShinsaibashiMedia(){
   console.log('  → 心斎橋：媒体フォルダ配下を媒体に:', changed.length, '件');
 }
 
+/* 福岡(CLINIC3)：MFの媒体フォルダ配下にある施術を媒体にする（福岡のみ・他院には影響しない）。
+   媒体フォルダは ★カンナムオンニ / ★トリビュー / ★カンナム・トリビュー限定メニュー / ★キレイパス / くまぽん の5つ。
+   ★カンナムオンニ以外は施術を直接持たない中間フォルダで operation_category に名前が出ないためIDを直接持つ
+   （子フォルダの構成がMF画面と完全一致し、配下の施術が現在名で全件媒体名を持つことで特定。2026/08/17）。
+   ・**媒体に上げるだけ**で、媒体を外したり通常/CPを判定したりはしない（心斎橋と同じ方針）。
+     福岡は migrateFukuokaTagTypes が施術名のタグで種別を決めているが、名前は改名されうるので取りこぼす。
+     実際 ★トリビュー配下は現在名では32/32が媒体名を持つのに、キャッシュに残る旧名（例「【初回限定】
+     ポテンツァ マックーム」→現在「【トリビュー】【初回限定】ポテンツァ マックーム」）に媒体名が無く
+     CPに落ちていた。フォルダで判定すれば改名に左右されない。
+   ・対象は福岡キャッシュに実在する optionId 限定（182施術）。5フォルダの配下68個はすべて福岡所属で、
+     新宿・心斎橋のキャッシュから指されるものは0件＝他院に波及しない（2026/08/17 確認）。
+   ・カテゴリ（施術の振り分け）は一切変更しない。物販/★未分類は対象外。除外は種別だけ判定する。
+   起動時・冪等。フォルダが見つからないときは警告を出す（MF側で作り直すとIDが変わるため）。 */
+const FUKUOKA_MEDIA_ROOT_IDS = [
+  '35110706-9eba-4442-a2b7-17d366967378',   // ★カンナムオンニ
+  '80f5197a-6935-477d-895e-e9bf732d94e1',   // ★トリビュー
+  '773fc725-e3a1-4642-ac76-196546bf376a',   // ★カンナム・トリビュー限定メニュー
+  '2ffe38d3-c50a-4596-b864-e0a66764682a',   // ★キレイパス
+  '86c4bceb-3e95-4743-be62-4a86422746a2',   // くまぽん
+];
+function fukuokaMediaFolderIds(){
+  const t = OPS_TREE['CLINIC3'];
+  if (!t) return null;
+  // 配下を1つも持たないルートは、MF側でフォルダを作り直してIDが変わった可能性が高い
+  const missing = FUKUOKA_MEDIA_ROOT_IDS.filter(r =>
+    !t.cats.has(r) && ![...t.cats.values()].some(c=>String(c.path).split('/').includes(r)));
+  if (missing.length) console.warn('  ⚠ 福岡：媒体フォルダが見つかりません（MFで作り直された可能性）:', missing.join(', '));
+  const ids = new Set(FUKUOKA_MEDIA_ROOT_IDS);
+  t.cats.forEach(c=>{ const seg = String(c.path).split('/'); if (FUKUOKA_MEDIA_ROOT_IDS.some(r=>seg.includes(r))) ids.add(c.id); });
+  return ids;
+}
+async function migrateFukuokaMedia(){
+  const mediaIds = fukuokaMediaFolderIds();
+  if (!mediaIds || !mediaIds.size) return;
+  const t = OPS_TREE['CLINIC3'];
+  const ids = new Set();
+  let files = [];
+  try { files = fs.readdirSync(CACHE_DIR).filter(f=>/^CLINIC3_\d+_\d+\.json$/.test(f)); } catch(e){ return; }
+  for (const f of files){
+    let j; try { j = JSON.parse(fs.readFileSync(path.join(CACHE_DIR, f),'utf8')); } catch(e){ continue; }
+    ((j && j.values) || []).forEach(v => (v.paymentItems||[]).forEach(it=>{
+      const id = String(it.optionId||'').trim(); if (id) ids.add(id);
+    }));
+  }
+  if (!ids.size) return;
+  const skip = ['物販','★未分類'];
+  const changed = [];
+  MASTER_ROWS.forEach(r=>{
+    const id = String(r.optionId||'').trim();
+    if (!ids.has(id)) return;                          // 福岡キャッシュに無い＝他院。触らない
+    const cat = String(r.category||'').trim();
+    if (!cat || skip.includes(cat)) return;
+    if (r.type === '媒体') return;
+    if (!mediaIds.has(t.optToCat.get(id))) return;     // 媒体フォルダ配下でなければ触らない
+    r.type = '媒体'; changed.push(r);
+  });
+  if (!changed.length) return;
+  if (SB_ON){ try { await sbUpsert('mfdash_master', changed.map(toSbMaster)); } catch(e){ console.error('福岡 媒体 SB書込失敗:', e.message); } }
+  localWriteMaster(MASTER_ROWS);
+  masterListInvalidAt = Date.now();
+  trendCacheInvalidAt = Date.now();
+  console.log('  → 福岡：媒体フォルダ配下を媒体に:', changed.length, '件');
+}
+
 // 親カテゴリにいた特定名の施術を子カテゴリへ移す（例: 肌育注射内のリズネ → リズネ）。起動時・冪等。
 async function migrateNameToChild(parentCat, nameKw, childCat){
   const changed = [];
@@ -1837,8 +1906,7 @@ async function migrateRenameCat(from, to){
   try { await migrateMergeCats(['ビタミンスレッド','サーモンスレッド','オーダーメイドスレッド'], 'ショートスレッド'); } catch(e){ console.error('ショートスレッド統合失敗:', e.message); }
   try { await migrateRenameCat('ミラノピール', 'ミラノリピール'); } catch(e){ console.error('ミラノリピール改名失敗:', e.message); }
   try { await migrateKumaponMedia(); } catch(e){ console.error('くまぽん種別修正失敗:', e.message); }
-  // 新宿の種別は下（物販廃止のあと）でフォルダ階層を読み込んでから判定する
-  try { await migrateFukuokaTagTypes(); } catch(e){ console.error('福岡タグ種別修正失敗:', e.message); }
+  // 新宿・福岡の種別は下（物販廃止のあと）でフォルダ階層を読み込んでから判定する
   try { await migrateNameToChild('肌育注射', 'リズネ', 'リズネ'); } catch(e){ console.error('リズネ子カテゴリ移行失敗:', e.message); }
   try { await migrateMergeCats(['CP-25'], 'ポテンツァ'); } catch(e){ console.error('CP-25統合失敗:', e.message); }
   try { await migrateUnassignCats(['ツヤ肌セット','ニキビ撃退セット']); } catch(e){ console.error('セット系未分類戻し失敗:', e.message); }
@@ -1853,6 +1921,12 @@ async function migrateRenameCat(from, to){
     try { await migrateShinsaibashiMedia(); } catch(e){ console.error('心斎橋 媒体判定失敗:', e.message); }
   }
   refreshOpsBg('CLINIC1', '心斎橋', migrateShinsaibashiMedia);
+  // 福岡：フォルダ階層を読んでから タグ判定 → 媒体フォルダ判定 の順で走らせる
+  // （タグ判定が媒体フォルダ配下を避けるため、先に OPS_TREE が要る）
+  loadOpsLocal('CLINIC3');
+  const fukuoka = async ()=>{ await migrateFukuokaTagTypes(); await migrateFukuokaMedia(); };
+  try { await fukuoka(); } catch(e){ console.error('福岡 種別判定失敗:', e.message); }
+  refreshOpsBg('CLINIC3', '福岡', fukuoka);
   if (SB_ON) migrateCacheToSb().catch(e=>console.error('キャッシュ移行失敗:', e.message));
   server.listen(PORT, () => {
     const ok = CLINIC_LIST.filter(c=>process.env[c.key+'_CLIENT_ID']).map(c=>c.name);
