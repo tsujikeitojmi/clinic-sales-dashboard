@@ -1584,15 +1584,15 @@ async function fetchOperations(clinicKey){
   OPS_TREE[clinicKey] = buildOpsTree(ops);
   return ops.length;
 }
-/* 起動後にバックグラウンドで新宿の施術フォルダ階層を取り直し、種別を再判定する。
+/* 起動後にバックグラウンドで施術フォルダ階層を取り直し、種別を再判定する。
    全件で1分ほどかかるので server.listen をブロックしない。従来のマイグレーションと同じく冪等。 */
-function refreshShinjukuOpsBg(){
+function refreshOpsBg(clinicKey, label, after){
   setTimeout(async ()=>{
     try {
-      const n = await fetchOperations('CLINIC2');
-      console.log('  → 新宿：施術フォルダ階層を更新:', n, '件');
-      await migrateShinjukuFolderTypes();
-    } catch(e){ console.error('新宿フォルダ階層の更新に失敗（保存分で継続）:', e.message); }
+      const n = await fetchOperations(clinicKey);
+      console.log(`  → ${label}：施術フォルダ階層を更新:`, n, '件');
+      await after();
+    } catch(e){ console.error(`${label}フォルダ階層の更新に失敗（保存分で継続）:`, e.message); }
   }, 500);
 }
 
@@ -1702,6 +1702,64 @@ async function migrateRetireBunpan(){
   // カテゴリ一覧からの削除は REMOVE_CATS（loadState内）が行う
 }
 
+/* 心斎橋(CLINIC1)：MFの媒体フォルダ配下にある施術を媒体にする（心斎橋のみ・他院には影響しない）。
+   媒体フォルダは 🔶カンナムオンニ🔶 / 🔶トリビュー🔶 / 🔶キレイパス🔶 / 🔶くまポン🔶 / ◆ホットペッパー◆ の5つ。
+   ホットペッパーだけは施術を直接持たない中間フォルダで operation_category に名前が出ないためIDを直接持つ
+   （配下120種類がすべて施術名に【HPB】を含むことで特定。2026/08/17）。残る4つは名前で引くので、
+   フォルダを作り直してIDが変わっても追従する。
+   ・**媒体に上げるだけ**で、媒体を外したり通常/CPを判定したりはしない。心斎橋には従来から種別の
+     自動判定が無く（振り分け時の推定と手作業で決めている）、フォルダ外の種別まで機械的に決めると
+     既存の運用を壊すため。取りこぼし防止として「フォルダに入っていれば媒体」だけを効かせる。
+   ・カテゴリ（施術の振り分け）は一切変更しない。物販/★未分類は対象外。除外は種別だけ判定する
+     （除外はカテゴリ別内訳には出ないがカードの媒体売上には乗るため）。
+   起動時・冪等。 */
+const SHINSAIBASHI_MEDIA_ROOT_IDS = [
+  'b1c401f8-9fd9-4ad0-86ea-2b0350129f20',   // ◆ホットペッパー◆（中間フォルダ・名前が取れない）
+];
+function shinsaibashiMediaFolderIds(){
+  const t = OPS_TREE['CLINIC1'];
+  if (!t) return null;
+  const roots = new Set(SHINSAIBASHI_MEDIA_ROOT_IDS);
+  // トップ階層(path='/')にある媒体名フォルダ（🔶カンナムオンニ🔶 など）
+  t.cats.forEach(c=>{ if (c.path === '/' && MEDIA_KW.some(k=>c.name.indexOf(k)>=0)) roots.add(c.id); });
+  const ids = new Set(roots);
+  t.cats.forEach(c=>{ const seg = String(c.path).split('/'); if ([...roots].some(r=>seg.includes(r))) ids.add(c.id); });
+  return ids;
+}
+async function migrateShinsaibashiMedia(){
+  const mediaIds = shinsaibashiMediaFolderIds();
+  if (!mediaIds || !mediaIds.size) return;
+  const t = OPS_TREE['CLINIC1'];
+  // 心斎橋キャッシュに実在する optionId だけを対象にする（他院に影響しない）
+  const ids = new Set();
+  let files = [];
+  try { files = fs.readdirSync(CACHE_DIR).filter(f=>/^CLINIC1_\d+_\d+\.json$/.test(f)); } catch(e){ return; }
+  for (const f of files){
+    let j; try { j = JSON.parse(fs.readFileSync(path.join(CACHE_DIR, f),'utf8')); } catch(e){ continue; }
+    ((j && j.values) || []).forEach(v => (v.paymentItems||[]).forEach(it=>{
+      const id = String(it.optionId||'').trim(); if (id) ids.add(id);
+    }));
+  }
+  if (!ids.size) return;
+  const skip = ['物販','★未分類'];
+  const changed = [];
+  MASTER_ROWS.forEach(r=>{
+    const id = String(r.optionId||'').trim();
+    if (!ids.has(id)) return;                          // 心斎橋キャッシュに無い＝他院。触らない
+    const cat = String(r.category||'').trim();
+    if (!cat || skip.includes(cat)) return;            // 未振り分け/物販/★未分類は対象外
+    if (r.type === '媒体') return;                      // すでに媒体なら何もしない
+    if (!mediaIds.has(t.optToCat.get(id))) return;     // 媒体フォルダ配下でなければ触らない
+    r.type = '媒体'; changed.push(r);
+  });
+  if (!changed.length) return;
+  if (SB_ON){ try { await sbUpsert('mfdash_master', changed.map(toSbMaster)); } catch(e){ console.error('心斎橋 媒体 SB書込失敗:', e.message); } }
+  localWriteMaster(MASTER_ROWS);
+  masterListInvalidAt = Date.now();
+  trendCacheInvalidAt = Date.now();
+  console.log('  → 心斎橋：媒体フォルダ配下を媒体に:', changed.length, '件');
+}
+
 // 親カテゴリにいた特定名の施術を子カテゴリへ移す（例: 肌育注射内のリズネ → リズネ）。起動時・冪等。
 async function migrateNameToChild(parentCat, nameKw, childCat){
   const changed = [];
@@ -1786,11 +1844,15 @@ async function migrateRenameCat(from, to){
   try { await migrateUnassignCats(['ツヤ肌セット','ニキビ撃退セット']); } catch(e){ console.error('セット系未分類戻し失敗:', e.message); }
   try { await migrateMergeCats(['美容点滴・注射','高濃度ビタミンC点滴','エクソソーム点滴','NMN点滴','白玉注射','疲労回復点滴'], EXCLUDED); } catch(e){ console.error('美容点滴・注射 除外移行失敗:', e.message); }
   try { await migrateRetireBunpan(); } catch(e){ console.error('物販カテゴリ廃止失敗:', e.message); }
-  // 新宿のCP判定に使うフォルダ階層。保存分があれば即使い、最新は起動後にバックグラウンドで取り直す
+  // 施術フォルダ階層。保存分があれば即使い、最新は起動後にバックグラウンドで取り直す
   if (loadOpsLocal('CLINIC2')){
     try { await migrateShinjukuFolderTypes(); } catch(e){ console.error('新宿CP再判定失敗:', e.message); }
   }
-  refreshShinjukuOpsBg();
+  refreshOpsBg('CLINIC2', '新宿', migrateShinjukuFolderTypes);
+  if (loadOpsLocal('CLINIC1')){
+    try { await migrateShinsaibashiMedia(); } catch(e){ console.error('心斎橋 媒体判定失敗:', e.message); }
+  }
+  refreshOpsBg('CLINIC1', '心斎橋', migrateShinsaibashiMedia);
   if (SB_ON) migrateCacheToSb().catch(e=>console.error('キャッシュ移行失敗:', e.message));
   server.listen(PORT, () => {
     const ok = CLINIC_LIST.filter(c=>process.env[c.key+'_CLIENT_ID']).map(c=>c.name);
