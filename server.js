@@ -1490,8 +1490,13 @@ async function migrateShinjukuFolderTypes(){
   const t = OPS_TREE['CLINIC2'];
   if (!t || !t.optToCat.size){ console.log('  → 新宿：フォルダ階層が無いため種別の再判定をスキップ'); return; }
   // CPの定義＝MFの「今月のキャンペーン」フォルダ配下（階層で判定）。見つからなければ何もしない
-  const cpIds = folderIdsUnder('CLINIC2', /今月のキャンペーン/);
-  if (!cpIds){ console.log('  → 新宿：「今月のキャンペーン」フォルダが無いため種別の再判定をスキップ'); return; }
+  const cpIds = shinjukuCpFolderIds();
+  // 配下フォルダが取れていないのに続けると、CPが全部「通常」に化ける（2026/08/22 の事故）。
+  // 本物は常に数百フォルダあるので、少なすぎるときは何もせず抜ける。
+  if (!cpIds || cpIds.size < 10){
+    console.log('  → 新宿：「今月のキャンペーン」配下を特定できない（' + (cpIds?cpIds.size:0) + 'フォルダ）ため種別の再判定をスキップ');
+    return;
+  }
   const mediaIds = shinjukuMediaFolderIds();   // 媒体トップフォルダ配下（無条件で媒体）
   // 除外カテゴリも「種別だけ」は判定する（カテゴリは除外のまま）。除外はカテゴリ別内訳には出ないが
   // カード上部の通常/CP/媒体には乗るため、ここを揃えないとMFの数字と合わなくなる。
@@ -1618,8 +1623,17 @@ function refreshOpsBg(clinicKey, label, after){
 function folderIdsUnder(clinicKey, rootNameRe){
   const t = OPS_TREE[clinicKey];
   if (!t) return null;
-  const root = [...t.cats.values()].find(c=>rootNameRe.test(c.name));
-  if (!root) return null;
+  // 名前は部分一致なので複数ヒットしうる（例「今月のキャンペーン」と
+  // 「今月のキャンペーン(2024/7月・8月)」＝過去分のアーカイブ）。find だと
+  // operations の並び順しだいでアーカイブ側を掴み、配下が激減して判定が壊れる。
+  // 実際 2026/08/22 に本番でこれが起き、新宿のCPが全部「通常」になった。
+  // 一番浅い階層（＝トップレベルの本体）を選ぶ。同じ深さなら名前が短いほう。
+  const depth = c => String(c.path).split('/').filter(Boolean).length;
+  const roots = [...t.cats.values()].filter(c=>rootNameRe.test(c.name))
+                  .sort((a,b)=> depth(a)-depth(b) || a.name.length-b.name.length);
+  if (!roots.length) return null;
+  const root = roots[0];
+  if (roots.length > 1) console.log(`  → ${clinicKey}：${rootNameRe} に ${roots.length} 件ヒット。"${root.name}" を採用`);
   const ids = new Set([root.id]);
   t.cats.forEach(c=>{ if (String(c.path).split('/').includes(root.id)) ids.add(c.id); });
   return ids;
@@ -1630,6 +1644,24 @@ function folderIdsUnder(clinicKey, rootNameRe){
    名前検索では引けないのでIDを直接持つ（配下フォルダの顔ぶれで特定済み。2026/08/14）。
    トリビュー/キレイパス/ホットペッパービューティーは「◯◯【明細用　予約時使用不可】」という
    名前で引けるので、フォルダを作り直してIDが変わっても名前側で拾える。 */
+/* 新宿の「今月のキャンペーン」トップフォルダ。この配下にある施術がCP。
+   媒体フォルダと同じ事情で、直下の施術を全部サブフォルダへ移すと operation_category に
+   名前が出なくなり、名前検索では引けなくなる。2026/08/22 に実際そうなり、名前検索が
+   配下のアーカイブ「今月のキャンペーン(2024/7月・8月)」を掴んで新宿のCPが全額「通常」に化けた。
+   そのためIDを直接持つ。名前検索はフォルダを作り直してIDが変わった時の保険として、
+   トップレベル(path='/')に限って併用する（アーカイブは配下にあるので掴まない）。 */
+const SHINJUKU_CP_ROOT_ID = 'b1ce9bae-cc6e-400c-befa-7782655ef341';
+function shinjukuCpFolderIds(){
+  const t = OPS_TREE['CLINIC2'];
+  if (!t) return null;
+  const depth = c => String(c.path).split('/').filter(Boolean).length;
+  const roots = new Set([SHINJUKU_CP_ROOT_ID]);
+  t.cats.forEach(c=>{ if (depth(c)===0 && /今月のキャンペーン/.test(c.name)) roots.add(c.id); });
+  const ids = new Set(roots);
+  t.cats.forEach(c=>{ const seg = String(c.path).split('/'); if ([...roots].some(r=>seg.includes(r))) ids.add(c.id); });
+  return ids;
+}
+
 const SHINJUKU_MEDIA_ROOT_IDS = [
   '99a002cd-4773-4359-8e17-0e482d334f65',   // カンナムオンニ【明細用　予約時使用不可】
   'd6c4b886-8bea-483c-bbfb-61a405cbb16b',   // くまポン【明細用　予約時使用不可】
