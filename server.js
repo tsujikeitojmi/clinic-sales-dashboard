@@ -1475,45 +1475,23 @@ async function migrateKumaponMedia(){
 //    検証: 新宿2026/07 の CP は ¥20,016,505 となり、MFの売上分析「今月のキャンペーン」と1円まで一致。
 //  ・キャンペーン終了後にフォルダを「過去のキャンペーン」へ移しても、そこも今月のキャンペーン配下なので
 //    過去の売上はCPのまま残る。逆に通常フォルダへ移すと過去月も遡って通常になる（MFのフォルダが正）。
-//  ・operations が未取得のときはフォルダ名タグ判定（shinjukuFolderType）にフォールバックする。
-//  ・種別のみ変更し、カテゴリ（施術の振り分け）は一切変更しない。物販/除外/★未分類は対象外。
-//  ・各 optionId は「最新月のフォルダ名」で判定する。medical-force は再取得時に現在のフォルダ名を返すため、
-//    新宿キャッシュを再取得しておけば現在のタグが全月に反映される。最新月が未取得(旧名)なら無印扱い＝CP。
-//  ・判定はマスタの apiCat 列ではなく新宿キャッシュの実フォルダ名で行う（apiCat 列は当てにならないため）。
-//  起動時・冪等。手動で種別を変えても次回起動でフォルダタグ基準に戻る（新宿はタグを正とする方針）。
-function shinjukuFolderType(folder){
-  const f = String(folder||'');
-  if (MEDIA_KW.some(k=>f.indexOf(k)>=0)) return '媒体';
-  if (f.indexOf('通常')>=0)              return '通常';
-  return 'CP';
-}
+//  ・operations（フォルダ階層）が取れないときは【何もしない】。以前はフォルダ名タグ判定へ
+//    フォールバックしていたが、本番は階層を持てず旧ルール(無印=CP)が全件を書き換えていたため廃止（2026/08/22）。
+//  ・種別のみ変更し、カテゴリ（施術の振り分け）は一切変更しない。物販/★未分類は対象外（除外は種別だけ判定）。
+//  ・対象は operations に存在する新宿の optionId のみ。キャッシュは一切見ないので、
+//    data/cache が無い本番(Render)でもローカルと同じ結果になる。
+//  起動時・冪等。手動で種別を変えても次回起動でフォルダ階層基準に戻る（新宿は階層を正とする方針）。
+const hasMediaKw = s => MEDIA_KW.some(k=>String(s).indexOf(k)>=0);
 async function migrateShinjukuFolderTypes(){
-  // 新宿キャッシュから optionId → 最新月の代表フォルダ名／施術名の媒体タグ有無 を求める（同月内は 媒体>通常>その他 を優先）
-  const hasMedia = s => MEDIA_KW.some(k=>String(s).indexOf(k)>=0);
-  const rank = f => hasMedia(f) ? 2 : (String(f).indexOf('通常')>=0 ? 1 : 0);
-  const latest = {}; // id -> { ym, folder, media }   media: 最新月の施術名に媒体名が入っているか
-  let files = [];
-  try { files = fs.readdirSync(CACHE_DIR).filter(f=>/^CLINIC2_\d+_\d+\.json$/.test(f)); } catch(e){ return; }
-  for (const f of files){
-    const mo = f.match(/^CLINIC2_(\d+)_(\d+)\.json$/); if (!mo) continue;
-    const ym = (+mo[1])*100 + (+mo[2]);
-    let j; try { j = JSON.parse(fs.readFileSync(path.join(CACHE_DIR, f),'utf8')); } catch(e){ continue; }
-    ((j && j.values) || []).forEach(v => (v.paymentItems||[]).forEach(it=>{
-      const id = String(it.optionId||'').trim(); if (!id) return;
-      const folder = String(it.category||'');
-      // 媒体は「施術名 or フォルダ名」で判定する（以前はフォルダ側を shinjukuFolderType が見ていた）
-      const media  = hasMedia(it.name||'') || hasMedia(folder);
-      const cur = latest[id];
-      if (!cur || ym > cur.ym){ latest[id] = { ym, folder, media }; }
-      else if (ym === cur.ym){
-        if (rank(folder) > rank(cur.folder)) cur.folder = folder;
-        if (media) cur.media = true;
-      }
-    }));
-  }
-  if (!Object.keys(latest).length) return;
-  // CPの定義＝MFの「今月のキャンペーン」フォルダ配下（階層で判定）。取得できていなければ null
+  // 判定材料は MFのフォルダ階層(operations)だけ。以前は新宿キャッシュの「最新月のフォルダ名」を
+  // 見ていたが、本番(Render)は起動直後 data/cache が空で判定できず、旧ルール(無印=CP)への
+  // フォールバックが全件を書き換えてしまっていた（2026/08/22 に判明）。階層だけで判断すれば
+  // ローカルでも本番でも同じ結果になる。
+  const t = OPS_TREE['CLINIC2'];
+  if (!t || !t.optToCat.size){ console.log('  → 新宿：フォルダ階層が無いため種別の再判定をスキップ'); return; }
+  // CPの定義＝MFの「今月のキャンペーン」フォルダ配下（階層で判定）。見つからなければ何もしない
   const cpIds = folderIdsUnder('CLINIC2', /今月のキャンペーン/);
+  if (!cpIds){ console.log('  → 新宿：「今月のキャンペーン」フォルダが無いため種別の再判定をスキップ'); return; }
   const mediaIds = shinjukuMediaFolderIds();   // 媒体トップフォルダ配下（無条件で媒体）
   // 除外カテゴリも「種別だけ」は判定する（カテゴリは除外のまま）。除外はカテゴリ別内訳には出ないが
   // カード上部の通常/CP/媒体には乗るため、ここを揃えないとMFの数字と合わなくなる。
@@ -1521,23 +1499,22 @@ async function migrateShinjukuFolderTypes(){
   const changed = [];
   MASTER_ROWS.forEach(r=>{
     const id = String(r.optionId||'').trim();
-    if (!latest[id]) return;                       // 新宿キャッシュに無い＝他院。触らない
+    const fid = t.optToCat.get(id);
+    if (!fid) return;                              // 新宿の施術ではない（他院）。触らない
     const cat = String(r.category||'').trim();
-    if (skip.includes(cat)) return;                // 物販/除外/★未分類は対象外
+    if (skip.includes(cat)) return;                // 物販/★未分類は対象外（除外は種別だけ判定する）
     // ①媒体トップフォルダ配下 or 施術名/フォルダ名に媒体名 → 媒体
     // ②「今月のキャンペーン」配下 → CP　③それ以外 → 通常
-    // フォルダ階層が未取得のとき（初回起動など）は従来のフォルダ名タグ判定にフォールバックする
-    const fid = OPS_TREE['CLINIC2'] ? OPS_TREE['CLINIC2'].optToCat.get(id) : null;
-    const want = (latest[id].media || (mediaIds && mediaIds.has(fid))) ? '媒体'
-               : (cpIds ? (cpIds.has(fid) ? 'CP' : '通常')
-                        : shinjukuFolderType(latest[id].folder));
+    const fname = t.cats.has(fid) ? t.cats.get(fid).name : '';
+    const want = (mediaIds.has(fid) || hasMediaKw(t.optName.get(id)||'') || hasMediaKw(fname)) ? '媒体'
+               : (cpIds.has(fid) ? 'CP' : '通常');
     if (r.type !== want){ r.type = want; changed.push(r); }
   });
   if (!changed.length) return;
   if (SB_ON){ try { await sbUpsert('mfdash_master', changed.map(toSbMaster)); } catch(e){ console.error('新宿フォルダ種別 SB書込失敗:', e.message); } }
   localWriteMaster(MASTER_ROWS);
   masterListInvalidAt = Date.now();   // マスタ画面キャッシュを無効化
-  console.log('  → 新宿：フォルダタグで種別を再判定:', changed.length, '件');
+  console.log('  → 新宿：フォルダ階層で種別を再判定:', changed.length, '件');
 }
 
 /* ====== MFの施術フォルダ階層（/developer/operations）======
@@ -1554,13 +1531,13 @@ const OPS_FILE = key => path.join(DATA_DIR, `operations_${key}.json`);
 let OPS_TREE = {};   // clinicKey -> { optToCat:Map(optionId→folderId), cats:Map(folderId→{id,name,path}) }
 
 function buildOpsTree(ops){
-  const cats = new Map(), optToCat = new Map();
+  const cats = new Map(), optToCat = new Map(), optName = new Map();
   (ops||[]).forEach(o=>{
     const c = o.operation_category;
     if (c && c.id) cats.set(c.id, { id:c.id, name:c.name||'', path:c.path||'/' });
-    (o.operation_options||[]).forEach(oo=>{ if (oo && oo.id && c && c.id) optToCat.set(oo.id, c.id); });
+    (o.operation_options||[]).forEach(oo=>{ if (oo && oo.id && c && c.id){ optToCat.set(oo.id, c.id); optName.set(oo.id, o.name||''); } });
   });
-  return { cats, optToCat };
+  return { cats, optToCat, optName };   // optName: optionId→施術名（媒体名の判定に使う）
 }
 function loadOpsLocal(key){
   try {
@@ -1568,6 +1545,44 @@ function loadOpsLocal(key){
     if (Array.isArray(ops) && ops.length){ OPS_TREE[key] = buildOpsTree(ops); return ops.length; }
   } catch(e){}
   return 0;
+}
+
+/* フォルダ階層をSupabaseにも置く（新宿のみ）。本番(Render)は data/ を持てず
+   operations_CLINIC2.json が無いため、階層が無いまま起動して種別判定ができなかった。
+   mfdash_cache の year=0/month=0 を間借りする（月次キャッシュと衝突しない＝スキーマ変更不要）。
+   保存するのは生の5000件ではなく判定に必要な部分だけ（6.0MB → 約1.0MB）。 */
+const OPS_SB_KEYS = new Set(['CLINIC2']);   // 新宿のみ。心斎橋・福岡の挙動は変えない
+function opsTreeToPlain(t){
+  return { cats: [...t.cats.values()].map(c=>[c.id, c.name, c.path]),
+           opt:  [...t.optToCat.entries()].map(([id,fid])=>[id, fid, t.optName.get(id)||'']) };
+}
+function opsPlainToTree(p){
+  const cats = new Map(), optToCat = new Map(), optName = new Map();
+  ((p && p.cats) || []).forEach(([id,name,pa])=> cats.set(id, { id, name:name||'', path:pa||'/' }));
+  ((p && p.opt)  || []).forEach(([id,fid,nm])=>{ optToCat.set(id, fid); optName.set(id, nm||''); });
+  return { cats, optToCat, optName };
+}
+async function sbOpsSave(key, tree){
+  if (!SB_ON || !OPS_SB_KEYS.has(key) || !tree) return;
+  await sbCacheUpsert(key, 0, 0, new Date().toISOString(), opsTreeToPlain(tree));
+}
+async function sbOpsLoad(key){
+  if (!SB_ON || !OPS_SB_KEYS.has(key)) return 0;
+  const sb = await sbCacheGet(key, 0, 0);
+  const p = sb && sb.values;
+  if (!p || !Array.isArray(p.opt) || !p.opt.length) return 0;   // 旧い空データ({values:[]})は無視
+  OPS_TREE[key] = opsPlainToTree(p);
+  return p.opt.length;
+}
+// 階層の読み込み：ローカルファイル → 無ければSupabase の順（本番は後者で入る）
+async function loadOpsShared(key){
+  const n = loadOpsLocal(key);
+  if (n) return n;
+  try {
+    const m = await sbOpsLoad(key);
+    if (m) console.log(`  → ${key}：フォルダ階層をSupabaseから読み込み: ${m} 件`);
+    return m;
+  } catch(e){ console.error('階層のSupabase読込失敗:', e.message); return 0; }
 }
 async function fetchOperations(clinicKey){
   const clinic = getClinic(clinicKey);
@@ -1582,6 +1597,8 @@ async function fetchOperations(clinicKey){
   }
   try { fs.writeFileSync(OPS_FILE(clinicKey), JSON.stringify(ops)); } catch(e){}
   OPS_TREE[clinicKey] = buildOpsTree(ops);
+  try { await sbOpsSave(clinicKey, OPS_TREE[clinicKey]); }   // 次回起動時に本番でも使えるよう共有
+  catch(e){ console.error('階層のSupabase保存失敗:', e.message); }
   return ops.length;
 }
 /* 起動後にバックグラウンドで施術フォルダ階層を取り直し、種別を再判定する。
@@ -1913,7 +1930,7 @@ async function migrateRenameCat(from, to){
   try { await migrateMergeCats(['美容点滴・注射','高濃度ビタミンC点滴','エクソソーム点滴','NMN点滴','白玉注射','疲労回復点滴'], EXCLUDED); } catch(e){ console.error('美容点滴・注射 除外移行失敗:', e.message); }
   try { await migrateRetireBunpan(); } catch(e){ console.error('物販カテゴリ廃止失敗:', e.message); }
   // 施術フォルダ階層。保存分があれば即使い、最新は起動後にバックグラウンドで取り直す
-  if (loadOpsLocal('CLINIC2')){
+  if (await loadOpsShared('CLINIC2')){   // ローカルに無ければSupabaseから（本番はこちら）
     try { await migrateShinjukuFolderTypes(); } catch(e){ console.error('新宿CP再判定失敗:', e.message); }
   }
   refreshOpsBg('CLINIC2', '新宿', migrateShinjukuFolderTypes);
