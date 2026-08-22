@@ -1506,6 +1506,10 @@ async function migrateShinjukuFolderTypes(){
   // 福岡の施術まで新宿のルールで塗り替わる（2026/08/22 に実際そうなった）。
   const SJ_CLINIC_ID = String((getClinic('CLINIC2')||{}).clinicId||'').trim();
   if (!SJ_CLINIC_ID){ console.log('  → 新宿：CLINIC2_CLINIC_ID が無いため種別の再判定をスキップ'); return; }
+  // 新宿の clinic_id で登録されているが、実際には他院が使うフォルダ（「表参道院の導線　新宿では
+  // 使用しない」など）。ここの施術は福岡の会計に出るので、新宿のルールで塗ると福岡の種別が壊れる。
+  // 2026/08/22 に実際そうなった（福岡の該当6施術が CP→通常、全期間で約¥480万ぶん）。
+  const notOurs = folderIdsUnder('CLINIC2', /新宿では使用しない/);
   const changed = [];
   MASTER_ROWS.forEach(r=>{
     const id = String(r.optionId||'').trim();
@@ -1513,6 +1517,7 @@ async function migrateShinjukuFolderTypes(){
     if (!fid) return;                              // operations に無い施術。触らない
     const fcat = t.cats.get(fid);
     if (!fcat || String(fcat.clinicId||'').trim() !== SJ_CLINIC_ID) return;   // 他院の施術。触らない
+    if (notOurs && notOurs.has(fid)) return;                                  // 新宿では使わないフォルダ。触らない
     const cat = String(r.category||'').trim();
     if (skip.includes(cat)) return;                // 物販/★未分類は対象外（除外は種別だけ判定する）
     // ①媒体トップフォルダ配下 or 施術名/フォルダ名に媒体名 → 媒体
