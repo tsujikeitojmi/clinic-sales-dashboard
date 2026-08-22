@@ -1501,11 +1501,18 @@ async function migrateShinjukuFolderTypes(){
   // 除外カテゴリも「種別だけ」は判定する（カテゴリは除外のまま）。除外はカテゴリ別内訳には出ないが
   // カード上部の通常/CP/媒体には乗るため、ここを揃えないとMFの数字と合わなくなる。
   const skip = ['物販','★未分類'];
+  // /developer/operations は clinic_id ヘッダを無視して3院ぶんを返すので、
+  // 新宿の clinic_id のフォルダに属する施術だけを対象にする。これを入れないと
+  // 福岡の施術まで新宿のルールで塗り替わる（2026/08/22 に実際そうなった）。
+  const SJ_CLINIC_ID = String((getClinic('CLINIC2')||{}).clinicId||'').trim();
+  if (!SJ_CLINIC_ID){ console.log('  → 新宿：CLINIC2_CLINIC_ID が無いため種別の再判定をスキップ'); return; }
   const changed = [];
   MASTER_ROWS.forEach(r=>{
     const id = String(r.optionId||'').trim();
     const fid = t.optToCat.get(id);
-    if (!fid) return;                              // 新宿の施術ではない（他院）。触らない
+    if (!fid) return;                              // operations に無い施術。触らない
+    const fcat = t.cats.get(fid);
+    if (!fcat || String(fcat.clinicId||'').trim() !== SJ_CLINIC_ID) return;   // 他院の施術。触らない
     const cat = String(r.category||'').trim();
     if (skip.includes(cat)) return;                // 物販/★未分類は対象外（除外は種別だけ判定する）
     // ①媒体トップフォルダ配下 or 施術名/フォルダ名に媒体名 → 媒体
@@ -1539,7 +1546,9 @@ function buildOpsTree(ops){
   const cats = new Map(), optToCat = new Map(), optName = new Map();
   (ops||[]).forEach(o=>{
     const c = o.operation_category;
-    if (c && c.id) cats.set(c.id, { id:c.id, name:c.name||'', path:c.path||'/' });
+    // clinicId を必ず持つ。/developer/operations は clinic_id ヘッダを無視して
+    // 3院ぶんまとめて返すため、これが無いと他院の施術まで巻き込む（2026/08/22 に福岡を壊した）。
+    if (c && c.id) cats.set(c.id, { id:c.id, name:c.name||'', path:c.path||'/', clinicId:c.clinic_id||'' });
     (o.operation_options||[]).forEach(oo=>{ if (oo && oo.id && c && c.id){ optToCat.set(oo.id, c.id); optName.set(oo.id, o.name||''); } });
   });
   return { cats, optToCat, optName };   // optName: optionId→施術名（媒体名の判定に使う）
@@ -1558,12 +1567,12 @@ function loadOpsLocal(key){
    保存するのは生の5000件ではなく判定に必要な部分だけ（6.0MB → 約1.0MB）。 */
 const OPS_SB_KEYS = new Set(['CLINIC2']);   // 新宿のみ。心斎橋・福岡の挙動は変えない
 function opsTreeToPlain(t){
-  return { cats: [...t.cats.values()].map(c=>[c.id, c.name, c.path]),
+  return { cats: [...t.cats.values()].map(c=>[c.id, c.name, c.path, c.clinicId||'']),
            opt:  [...t.optToCat.entries()].map(([id,fid])=>[id, fid, t.optName.get(id)||'']) };
 }
 function opsPlainToTree(p){
   const cats = new Map(), optToCat = new Map(), optName = new Map();
-  ((p && p.cats) || []).forEach(([id,name,pa])=> cats.set(id, { id, name:name||'', path:pa||'/' }));
+  ((p && p.cats) || []).forEach(([id,name,pa,cid])=> cats.set(id, { id, name:name||'', path:pa||'/', clinicId:cid||'' }));
   ((p && p.opt)  || []).forEach(([id,fid,nm])=>{ optToCat.set(id, fid); optName.set(id, nm||''); });
   return { cats, optToCat, optName };
 }
