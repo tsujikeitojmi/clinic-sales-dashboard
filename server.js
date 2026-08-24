@@ -562,7 +562,11 @@ async function readRawFull(clinicKey, year, month){
   }
   return null;
 }
-async function readRaw(clinicKey, year, month){ const j = await readRawFull(clinicKey, year, month); return j ? j.values : null; }
+// values が配列でないものは月次データではない（year=0 のフォルダ階層など）。null を返して呼び側で弾く
+async function readRaw(clinicKey, year, month){
+  const j = await readRawFull(clinicKey, year, month);
+  return (j && Array.isArray(j.values)) ? j.values : null;
+}
 // 保存サイズ削減：集計が使う項目だけ残す（会計=v単位は保持。各paymentItemは6項目のみ）。
 // 使う項目: optionId / name / category / courseContractAmountWithTax / courseDigestionAmountWithTax / genuinePriceWithTax
 function slimValues(values){
@@ -1025,12 +1029,16 @@ async function getOverview(year, month){
 // キャッシュ済みの月一覧（このクリニック）
 async function listCachedMonths(clinicKey){
   const out = [], seen = new Set();
+  // year=0/month=0 は施術フォルダ階層(operations)の間借り行なので月として扱わない。
+  // 中身が {opt,cats} で values を持たず、月次データとして読むと落ちる
+  // （振り分けの全期間走査で「values.forEach is not a function」になっていた。2026/08/24）
+  const isMonth = (y,m) => y>=2000 && m>=1 && m<=12;
   const re = new RegExp('^' + clinicKey + '_(\\d+)_(\\d+)\\.json$');
-  try { fs.readdirSync(CACHE_DIR).forEach(f=>{ const m=f.match(re); if(m){ const k=`${m[1]}_${m[2]}`; if(!seen.has(k)){ seen.add(k); out.push({year:+m[1], month:+m[2]}); } } }); } catch(e){}
+  try { fs.readdirSync(CACHE_DIR).forEach(f=>{ const mm=f.match(re); if(mm){ const y=+mm[1], m=+mm[2]; if(!isMonth(y,m)) return; const k=`${y}_${m}`; if(!seen.has(k)){ seen.add(k); out.push({year:y, month:m}); } } }); } catch(e){}
   if (SB_ON){
     try {
       const rows = await sbGet(`mfdash_cache?clinic_key=eq.${clinicKey}&select=year,month`);
-      rows.forEach(r=>{ const k=`${r.year}_${r.month}`; if(!seen.has(k)){ seen.add(k); out.push({year:r.year, month:r.month}); } });
+      rows.forEach(r=>{ if(!isMonth(+r.year, +r.month)) return; const k=`${r.year}_${r.month}`; if(!seen.has(k)){ seen.add(k); out.push({year:r.year, month:r.month}); } });
     } catch(e){ console.error('listCachedMonths SB失敗:', e.message); }
   }
   return out;
