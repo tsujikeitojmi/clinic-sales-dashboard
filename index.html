@@ -1141,14 +1141,29 @@ function renderChart(){
       },
       onHover:(e, els, ch)=>{ ch.canvas.style.cursor = (els && els.length) ? 'pointer' : 'default'; },
       plugins:{legend:{labels:{color:'#7a736d', usePointStyle:true, pointStyleWidth:10, boxHeight:7}},
-        tooltip:{callbacks:{label:c=>{
-          const x=m[c.dataIndex];
-          if(c.dataset.label==='件数'){
-            return `合計: ${num(c.raw)} 件　${yen(pick(x,'sales'))}`;
+        tooltip:{callbacks:{
+          // 折れ線（件数）のところに全部まとめて出す。棒（通常/CP/媒体）側は行を出さない。
+          // 構造どおり「合計 → kind4区分 → 施術の内訳（通常/CP/媒体）」の順に並べる。
+          label:c=>{
+            if(c.dataset.label!=='件数') return null;      // 棒の行は出さない（重複を避ける）
+            const x=m[c.dataIndex];
+            const padL=(t,w)=>{ t=String(t); return t+'　'.repeat(Math.max(0,w-t.length)); };   // 全角で名前を揃える
+            const padR=(t,w)=>{ t=String(t); return ' '.repeat(Math.max(0,w-t.length))+t; };
+            const row=(name,cnt,amt)=>`${padL(name,4)} ${padR(num(cnt)+' 件',9)} ${padR(yen(amt),13)}`;
+            const out=[ row('合計', pick(x,'count'), pick(x,'sales')) ];
+            // カテゴリ選択中は kind の内訳が出せない（cats はカテゴリ別のため）。種別だけを出す
+            const ec = (typeof effectiveCat==='function') ? effectiveCat() : null;
+            if(!ec && Array.isArray(x.kinds) && x.kinds.length){
+              out.push('────────────────');
+              x.kinds.forEach(k=>out.push(row(k.kind, k.count, k.sales)));
+              out.push('─ 施術の内訳 ──────');
+              ['通常','CP','媒体'].forEach(t=>out.push(row('　'+t, pick(x,'count_'+t), pick(x,t))));
+            } else {
+              ['通常','CP','媒体'].forEach(t=>out.push(row(t, pick(x,'count_'+t), pick(x,t))));
+            }
+            return out;
           }
-          const lbl=c.dataset.label;
-          return `${lbl}: ${num(pick(x,'count_'+lbl))} 件　${yen(c.raw)}`;
-        }}}},
+        }}},
       scales:{
         x:{stacked:true, ticks:{color:'#a8a09a'}, grid:{color:'#f0ece8'}},
         y:{stacked:true, ticks:{color:'#a8a09a', callback:v=>'¥'+(v/10000)+'万'}, grid:{color:'#f0ece8'}},
