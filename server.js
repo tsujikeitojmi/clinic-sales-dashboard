@@ -434,17 +434,24 @@ function aggregateKinds(values){
     const counted = new Set();
     const vis = v.visitorId || null;
     (v.paymentItems||[]).forEach(it=>{
+      const kind = kindOf(it);
+      // 人数は medical-force の公式画面と同じ数え方にする（aggregateByKind と同一条件）。
+      // 「価格欄を持つ明細がある患者」を数えるので、コース契約だけで未消化の人や
+      // ¥0の施術しか受けていない人も入る。売上の母集団とは意図的にズラしている
+      // （カードの人数をMFと突き合わせられるようにするため。2026/08/24）。
+      // 件数・売上は従来どおり「売上が立った明細」だけを見る。
+      const person = (kind==='その他') ? !!it.kind : (it.genuinePriceWithTax !== undefined);
+      if (vis && person) out[kind]._ppl.add(vis);
+
       const contract = Number(it.courseContractAmountWithTax)||0;
       const digest   = Number(it.courseDigestionAmountWithTax)||0;
       const genuine  = Number(it.genuinePriceWithTax)||0;
       if (contract>0) return;
       const sales = digest>0 ? Math.floor(digest) : Math.floor(genuine);
       if (sales===0) return;
-      const kind = kindOf(it);
       const key  = kind + '|' + (String(it.optionId||'').trim() || ('n:'+(it.name||'')));
       out[kind].sales += sales;
-      out[kind].qty   += Number(it.quantity)||0;   // 個数＝数量の合計
-      if (vis) out[kind]._ppl.add(vis);            // 人数＝ユニーク患者
+      out[kind].qty   += Number(it.quantity)||0;   // 個数＝数量の合計（内訳テーブル用）
       if (!counted.has(key)){ out[kind].count++; counted.add(key); }
     });
   });

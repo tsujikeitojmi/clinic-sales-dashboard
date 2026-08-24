@@ -795,6 +795,7 @@ function renderCards(){
           <div class="s">${num(k.count)} 件 ・ ${num(k.ppl)} 人</div>
         </div>`).join('')}
     </div>
+    <div class="cards-lbl" style="font-weight:400">件数＝会計ごとの回数（売上と同じ母集団）／人数＝medical-force の「人数」と同じ数え方</div>
     <div class="cards-lbl">施術の内訳（通常／CP／媒体）</div>
     <div class="cards-row c3">
       <div class="card-sm t-n"><div class="k">通常</div><div class="v">${yen(normal)}</div>
@@ -1075,14 +1076,13 @@ function renderCards2(){
   // 件数（種別別）＝会計ベース。売上と同じ母集団なので 売上÷件数＝単価 が成立する。
   const cnt    = t => matched.reduce((s,c)=>s+(c['count_'+t]||0),0);
   const cntAll = matched.reduce((s,c)=>s+(c.count||0),0);
-  const qtyAll = matched.reduce((s,c)=>s+(c.qty||0),0);
   const pplAll = matched.reduce((s,c)=>s+(c.ppl||0),0);   // ※子カテゴリを両方受けた人は二重。目安
   // カテゴリは施術の中だけの概念なので、kind区分は出さず「そのカテゴリ＋種別内訳」の2段にする
   const shSales = (DATA.kinds||[]).reduce((a,k)=>a+(k.kind==='施術'?k.sales:0),0);
   document.getElementById('cards').innerHTML = `
     <div class="card-hero">
       <div class="k">${esc(displayCat(ec))}（施術の中のカテゴリ）</div>
-      <div><span class="v">${yen(sales)}</span><span class="cnt">${num(cntAll)} 件 ・ ${num(qtyAll)} 個 ・ ${num(pplAll)} 人</span></div>
+      <div><span class="v">${yen(sales)}</span><span class="cnt">${num(cntAll)} 件 ・ ${num(pplAll)} 人</span></div>
       <div class="kbar-lgd" style="margin-top:10px">施術売上 ${yen(shSales)} の <b style="color:var(--txt)">${pct(sales,shSales)}%</b></div>
     </div>
     <div class="cards-lbl">種別の内訳（通常／CP／媒体）</div>
