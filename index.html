@@ -337,8 +337,9 @@
       <select id="yearSel" onchange="reload()"></select>
       <select id="monthSel" onchange="reload()"></select>
       <button class="ghost" onclick="reload(true)" title="選択中の月だけAPIから取り直す">🔄 最新取得</button>
-      <button class="ghost" onclick="fetchAllPast()" title="この院の過去12か月のうち未取得の月をまとめて取得">📥 過去分を取得</button>
+      <button class="ghost" onclick="fetchAllPast()" title="この院の過去12か月をまとめて取得">📥 過去分を取得</button>
       <button class="ghost" onclick="toggleRangeBar()" title="開始年月〜終了年月をまとめて取得（2023まで遡れます）">📆 範囲取得</button>
+      <label class="tbl-toggle" title="オフ＝未取得の月だけ取得。オン＝取得済みの月もAPIから取り直す（medical-force側で会計が後から修正された場合はこちら）"><input type="checkbox" id="forceRefetch"> 取得済みも取り直す</label>
     </div>
     <div class="topbar" id="rangeBar" style="display:none">
       <span class="muted" style="font-size:12px">範囲取得：</span>
@@ -687,7 +688,18 @@ function render(){
   toggleDetailPanels();
 }
 
-/* この院の過去12か月をまとめて取得（キャッシュ済みは即スキップ・未取得だけAPI） */
+/* 「取得済みも取り直す」チェックの状態。オンなら refresh=1 を付けてAPIから強制再取得する。
+   medical-force 側で会計が後から修正されると、取得済みの月はキャッシュのままズレ続けるため
+   （例: 福岡2026/05 が7/29取得のままで ¥24,800 少なかった）。既定はオフ＝従来どおり穴埋めのみ。 */
+function isForceRefetch(){ return !!(document.getElementById('forceRefetch')||{}).checked; }
+function fetchParams(y, m, force){
+  const p = { clinic:curClinic, year:y, month:m };
+  if (force) p.refresh = 1;
+  return p;
+}
+
+/* この院の過去12か月をまとめて取得。既定は未取得だけAPI（取得済みは即スキップ）。
+   「取得済みも取り直す」がオンなら全月を refresh=1 で取り直す。 */
 async function fetchAllPast(){
   if (!DATA || !DATA.monthly) return;
   const months = DATA.monthly.map(x=>x.label);                 // "YYYY/MM" ×12
@@ -701,8 +713,8 @@ async function fetchAllPast(){
   for (const lbl of months){
     const [y,m] = lbl.split('/').map(Number);
     done++;
-    showLoad(`過去分を取得中… ${done}/${months.length}（${lbl}）${'　'}※キャッシュ済みはすぐ進みます`);
-    try { await api('/api/dashboard', {clinic:curClinic, year:y, month:m}); } catch(e){ /* 月単位の失敗はスキップ */ }
+    showLoad(`過去分を${force?'取り直し中':'取得中'}… ${done}/${months.length}（${lbl}）${'　'}${force?'※1か月15〜20秒':'※キャッシュ済みはすぐ進みます'}`);
+    try { await api('/api/dashboard', fetchParams(y, m, force)); } catch(e){ /* 月単位の失敗はスキップ */ }
   }
   hideLoad();
   reload();   // グラフを更新
@@ -732,8 +744,8 @@ async function fetchRange(){
   let done=0;
   for (const {y,m} of months){
     done++;
-    showLoad(`範囲取得中… ${done}/${months.length}（${y}/${z(m)}）　※キャッシュ済みはすぐ進みます`);
-    try { await api('/api/dashboard', {clinic:curClinic, year:y, month:m}); } catch(e){ /* 月単位の失敗はスキップ */ }
+    showLoad(`範囲${force?'取り直し中':'取得中'}… ${done}/${months.length}（${y}/${z(m)}）　${force?'※1か月15〜20秒':'※キャッシュ済みはすぐ進みます'}`);
+    try { await api('/api/dashboard', fetchParams(y, m, force)); } catch(e){ /* 月単位の失敗はスキップ */ }
   }
   hideLoad();
   reload();   // グラフを更新
