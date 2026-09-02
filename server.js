@@ -485,9 +485,15 @@ function countVisits(values){
    ・件数 = aggregateClinic と同じ数え方（会計ごとに数える。同一会計内で同じ施術は1件）。
            同じ人が別の日に同じ施術を受けたら2件＝「回数」であって頭数ではない。
            → 内訳の件数合計 = カード/月別サマリーの総件数 と一致する。
-   ※ユニーク患者数(頭数)は公式集計テーブル(aggregateByKind)だけが扱う。 */
-function aggregateItems(values, masterMap){
+   ・販売数/販売額(soldCount/soldSales) = コース・チケットを「売った」ぶん（契約行）。★売上・件数には一切入れない。
+           コースは消化した月に売上計上するので、販売月と消化月はズレる（別勘定として横に並べるだけ）。
+   ※ユニーク患者数(頭数)は公式集計テーブル(aggregateByKind)だけが扱う。
+   opts.includeSoldOnly=true のときだけ「販売はあったが当月の消化ゼロ」の施術も行として出す。
+   （既定=false。/period の施術内訳は販売列を持たないので、行が増えないよう従来どおりにする） */
+function aggregateItems(values, masterMap, opts){
+  const includeSoldOnly = !!(opts && opts.includeSoldOnly);
   const byOpt = {};
+  const sold  = {};   // 販売（コース/チケットの契約）。売上・件数とは別勘定で集める
   (values||[]).forEach(v=>{
     const counted = new Set();   // 会計内の重複排除（aggregateClinic の countKey と同じ考え方）
     (v.paymentItems||[]).forEach(it=>{
@@ -495,24 +501,47 @@ function aggregateItems(values, masterMap){
       const contract = Number(it.courseContractAmountWithTax)||0;
       const digest   = Number(it.courseDigestionAmountWithTax)||0;
       const genuine  = Number(it.genuinePriceWithTax)||0;
-      if (contract>0) return;                                  // コース契約は計上しない（消化時に計上）
+      const opt = String(it.optionId||'').trim();
+      const k = opt || ('noopt|' + (it.name||''));
+      if (contract>0){                                         // コース契約は計上しない（消化時に計上）
+        // 売上・件数には入れず、販売数として別に数えるだけ。
+        // 契約行1つ＝1販売。全6,813行とも quantity=1 で、同一会計に同じoptionIdの契約行が
+        // 2行以上あるケースは0件（2026/08 実測）なので、会計内の重複排除は不要。
+        if (!sold[k]) sold[k] = { optionId:opt, name:it.name||'', apiCat:it.category||'', count:0, sales:0 };
+        sold[k].count++;
+        sold[k].sales += Math.floor(contract);
+        return;
+      }
       const sales = digest>0 ? Math.floor(digest) : Math.floor(genuine);
       if (sales===0) return;                                   // 売上が立たない行は件数にも数えない
-      const opt = String(it.optionId||'').trim();
       let cat, typ;
       if (opt && masterMap[opt]){
         cat = masterMap[opt].category; typ = masterMap[opt].type;
         // 「除外」も内訳には含める（確認・修正できるように）
       } else { cat = UNCLASSIFIED; typ = '通常'; }
       if (!TYPES_NEW.includes(typ)) typ='通常';
-      const k = opt || ('noopt|' + (it.name||''));
       if (!byOpt[k]) byOpt[k] = { optionId:opt, name:it.name||'', apiCat:it.category||'', category:cat, type:typ, count:0, sales:0 };
       byOpt[k].sales += sales;
       if (!counted.has(k)){ byOpt[k].count++; counted.add(k); }
     });
   });
+  // 販売を対応する施術行にぶら下げる。消化のない施術は includeSoldOnly のときだけ行を作る（売上0・件数0）
+  Object.keys(sold).forEach(k=>{
+    const s = sold[k];
+    if (!byOpt[k]){
+      if (!includeSoldOnly) return;
+      const m = s.optionId && masterMap[s.optionId];
+      let cat = m ? m.category : UNCLASSIFIED;
+      let typ = m ? m.type : '通常';
+      if (!TYPES_NEW.includes(typ)) typ='通常';
+      byOpt[k] = { optionId:s.optionId, name:s.name, apiCat:s.apiCat, category:cat, type:typ, count:0, sales:0 };
+    }
+    byOpt[k].soldCount = s.count;
+    byOpt[k].soldSales = s.sales;
+  });
   return Object.values(byOpt)
-    .map(o=>({ optionId:o.optionId, name:o.name, apiCat:o.apiCat, category:o.category, type:o.type, count:o.count, sales:o.sales }))
+    .map(o=>({ optionId:o.optionId, name:o.name, apiCat:o.apiCat, category:o.category, type:o.type,
+               count:o.count, sales:o.sales, soldCount:o.soldCount||0, soldSales:o.soldSales||0 }))
     .sort((a,b)=> b.sales - a.sales);
 }
 
@@ -909,7 +938,8 @@ async function getDashboard(clinicKey, year, month, refresh){
   const masterMap = loadMasterMap();
   const pend = {};   // 振り分け可能な未分類（optionId有り・売上≠0）だけを集める
   const byCat = aggregateClinic(values, masterMap, pend);
-  const itemsData = aggregateItems(values, masterMap);   // 施術単位の内訳（件数は会計ベース＝総件数と一致）
+  // 施術単位の内訳（件数は会計ベース＝総件数と一致）。販売数/販売額（コース・チケットの契約）も付ける
+  const itemsData = aggregateItems(values, masterMap, { includeSoldOnly:true });
   const categories = Object.keys(byCat).map(cat=>({
     category:cat, sales:byCat[cat].sales, count:byCat[cat].count,
     qty:byCat[cat].qty||0, ppl:byCat[cat]._ppl ? byCat[cat]._ppl.size : 0,   // 個数／人数（人数は足し算できない）

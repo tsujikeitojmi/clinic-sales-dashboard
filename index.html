@@ -188,14 +188,20 @@
     tr.official-total td{font-weight:700;border-top:2px solid var(--hair);background:var(--accent-tint)}
     /* 施術内訳テーブル：列幅を固定して施術名が潰れないように（APIカテゴリの長文で押されるのを防ぐ） */
     #itemsTable{table-layout:fixed;width:100%}
-    #itemsTable th:first-child,#itemsTable td:first-child{width:26%}
-    #itemsTable th:nth-child(2),#itemsTable td:nth-child(2){width:22%;text-align:left;white-space:normal;word-break:break-word}
-    #itemsTable th:nth-child(3),#itemsTable td:nth-child(3){width:12%}
-    #itemsTable th:nth-child(4),#itemsTable td:nth-child(4){width:7%}
-    #itemsTable th:nth-child(5),#itemsTable td:nth-child(5){width:8%}
-    #itemsTable th:nth-child(6),#itemsTable td:nth-child(6){width:11%}
-    #itemsTable th:nth-child(7),#itemsTable td:nth-child(7){width:9%}
-    #itemsTable th:nth-child(8),#itemsTable td:nth-child(8){width:5%}
+    #itemsTable th:first-child,#itemsTable td:first-child{width:22%}
+    #itemsTable th:nth-child(2),#itemsTable td:nth-child(2){width:18%;text-align:left;white-space:normal;word-break:break-word}
+    #itemsTable th:nth-child(3),#itemsTable td:nth-child(3){width:10%}
+    #itemsTable th:nth-child(4),#itemsTable td:nth-child(4){width:6%}
+    #itemsTable th:nth-child(5),#itemsTable td:nth-child(5){width:6%}
+    #itemsTable th:nth-child(6),#itemsTable td:nth-child(6){width:10%}
+    #itemsTable th:nth-child(7),#itemsTable td:nth-child(7){width:6%}
+    #itemsTable th:nth-child(8),#itemsTable td:nth-child(8){width:10%}
+    #itemsTable th:nth-child(9),#itemsTable td:nth-child(9){width:8%}
+    #itemsTable th:nth-child(10),#itemsTable td:nth-child(10){width:4%}
+    /* 販売数・販売額（コース/チケットを売ったぶん）は売上ではないので、色を落として区別する */
+    #itemsTable th.sold,#itemsTable td.sold{color:var(--sub)}
+    #itemsTable th.sold{font-style:italic}
+    #itemsTable td.sold-on{color:var(--accent2);font-weight:600}
     th{color:var(--sub);font-weight:600;font-size:12px}
     tbody tr:hover{background:var(--panel2)}
     tr.unc td:first-child{color:var(--accent)}
@@ -435,7 +441,7 @@
       <div class="muted" id="itemsHint" style="font-size:11px;margin-bottom:8px"></div>
       <table id="itemsTable">
         <thead>
-          <tr><th>施術名（マスタ）</th><th>APIカテゴリ（元フォルダ）</th><th>カテゴリ</th><th>種別</th><th>件数</th><th>売上</th><th>平均単価</th><th></th></tr>
+          <tr><th>施術名（マスタ）</th><th>APIカテゴリ（元フォルダ）</th><th>カテゴリ</th><th>種別</th><th class="sold" title="コース・チケットを売った数（契約）。売上には含まれません">販売数</th><th class="sold" title="コース・チケットの契約額。売上には含まれません（消化した月に売上計上）">販売額</th><th>件数</th><th>売上</th><th>平均単価</th><th></th></tr>
         </thead>
         <tbody></tbody>
       </table>
@@ -1464,20 +1470,26 @@ function renderItems(){
   else { const fs=new Set(getCatAndDescendants(ec)); items=all.filter(x=>fs.has(x.category)); }
   document.getElementById('itemsTitle').textContent = `施術内訳（${ec ? displayCat(ec) : '全カテゴリ'}）`;
   const totS = items.reduce((s,x)=>s+x.sales,0), totC = items.reduce((s,x)=>s+x.count,0);
+  // 販売（コース・チケットの契約）は売上と別勘定なので、合計も分けて出す
+  const soldS = items.reduce((s,x)=>s+(x.soldSales||0),0), soldC = items.reduce((s,x)=>s+(x.soldCount||0),0);
   document.getElementById('itemsHint').textContent =
     `${items.length}施術 ・ 合計 ${yen(totS)} / ${num(totC)}件` +
+    (soldC ? `　｜　コース・チケット販売 ${num(soldC)}件 ${yen(soldS)}（売上には含みません）` : '') +
     (curCat ? '' : '　※左サイドで施術カテゴリを選ぶと、その中身だけに絞れます');
   const tb = document.querySelector('#itemsTable tbody');
-  if (!items.length){ tb.innerHTML = '<tr><td colspan="8" class="muted">該当なし</td></tr>'; return; }
+  if (!items.length){ tb.innerHTML = '<tr><td colspan="10" class="muted">該当なし</td></tr>'; return; }
+  const dash = '<span style="opacity:.35">—</span>';
   tb.innerHTML = items.map(x=>`
     <tr class="${x.category==='★未分類'?'unc':''}">
       <td>${esc(x.name)||'<span class="muted">(名称なし)</span>'}</td>
       <td class="muted" style="text-align:left">${esc(x.apiCat)||'<span style="opacity:.5">—</span>'}</td>
       <td style="text-align:left"><span class="pill">${esc(displayCat(x.category))}</span></td>
       <td class="muted" style="text-align:left">${esc(x.type)}</td>
-      <td>${num(x.count)}</td>
-      <td>${yen(x.sales)}</td>
-      <td>${yen(x.count?Math.round(x.sales/x.count):0)}</td>
+      <td class="sold${x.soldCount?' sold-on':''}">${x.soldCount?num(x.soldCount):dash}</td>
+      <td class="sold${x.soldCount?' sold-on':''}">${x.soldCount?yen(x.soldSales):dash}</td>
+      <td>${x.count?num(x.count):dash}</td>
+      <td>${x.count?yen(x.sales):dash}</td>
+      <td>${x.count?yen(Math.round(x.sales/x.count)):dash}</td>
       <td>${x.optionId?`<button class="iedit" data-opt="${esc(x.optionId)}" onclick="editItem(this.dataset.opt)">編集</button>`:''}</td>
     </tr>`).join('');
 }
