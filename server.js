@@ -47,6 +47,7 @@ const EXCLUDED     = '除外';   // 集計合計には含めないが、確認�
 // 施術カテゴリ（グループ）初期一覧。data/categories.json で編集・追加できる
 const DEFAULT_CATEGORIES = [
   'ポテンツァ',
+  'ポテンツァプライム',   // 2026/09 追加。3院共通・子カテゴリなし（＝そのまま振り分け先に選べる）
   'S-16','S-25','A1-15','ダイヤモンド','ジュベリジュ（ポテンツァ）','スノーフラワーブルーム（ポテンツァ）',
   'BENEV','マックーム','リジュラン','ジュベルック','ボトックス（ポテンツァ）',
   'エクソソーム','スネコス','デイリースペシャル(マックーム+エクソソーム)',
@@ -82,6 +83,8 @@ const CATEGORY_TREE = [
     { name:'S-16' }, { name:'S-25' }, { name:'A1-15' }, { name:'ダイヤモンド' },
     { name:'ジュベリジュ（ポテンツァ）' }, { name:'スノーフラワーブルーム（ポテンツァ）' },
   ]},
+  // ポテンツァプライムは別機材なのでポテンツァの子ではなく独立した親カテゴリ。並びはポテンツァの直下（2026/09）
+  { name:'ポテンツァプライム' },
   { name:'フォトフェイシャル' },
   { name:'アクネフォト' },
   { name:'脱毛' },
@@ -818,7 +821,10 @@ function getConfig(){
   const today = new Date();
   return {
     clinics: CLINIC_LIST.map(c=>({key:c.key, name:c.name, color:c.color})),
-    categories: readCategories().filter(c=>ROOT_CAT_NAMES.has(c)),
+    // ルートカテゴリのみ。並びは CATEGORY_TREE（＝サイドバーの並び）に合わせる。
+    // カテゴリ一覧(CAT_ARR)の順はSupabaseのsort列で、新カテゴリが末尾に追記されるため
+    // 振り分けピッカーだけサイドバーと並びがズレていた（2026/09）。集合は従来と同じ。
+    categories: CATEGORY_TREE.map(n=>n.name).filter(n=>readCategories().includes(n)),
     categoryTree: CATEGORY_TREE,
     categoryClinics: CATEGORY_CLINICS,   // カテゴリの院スコープ（未指定は全院）
     types: TYPES_NEW,
@@ -1963,6 +1969,28 @@ async function migrateUnassignCats(cats){
   console.log('  → 未分類へ戻す:', cats.join('/'), changed.length, '件');
 }
 
+/* ポテンツァプライムの施術が他カテゴリ（ポテンツァ等）に振り分け済みなら★未分類へ戻す。
+   新カテゴリ「ポテンツァプライム」へ振り直してもらうため（2026/09）。
+   ・既に ポテンツァプライム / 除外 / ★未分類 の行は触らない＝冪等。振り直した後に戻されることはない
+   ・カテゴリだけ変更し、種別（通常/CP/媒体）は一切変更しない
+   ・「プライム」単独では拾わない（無関係なメニューを巻き込むため）。ポテンツァと連続する表記のみ対象
+   ・2026/09 時点でマスタ7,186行・キャッシュ全月ともに該当0件。今後メニューが出てきた時に効く */
+const PRIME_RE = /ポテンツァ\s*プライム|potenza\s*prime|ポテンツァprime/;
+async function migrateUnassignPrime(){
+  const changed = [];
+  MASTER_ROWS.forEach(r=>{
+    const cat = String(r.category||'').trim();
+    if (!cat || cat==='ポテンツァプライム' || cat===EXCLUDED || cat===UNCLASSIFIED) return;
+    if (!PRIME_RE.test(norm(String(r.name||'') + ' ' + String(r.apiCat||'')))) return;
+    r.category = UNCLASSIFIED; changed.push(r);
+  });
+  if (!changed.length) return;
+  if (SB_ON){ try { await sbUpsert('mfdash_master', changed.map(toSbMaster)); } catch(e){ console.error('ポテンツァプライム未分類戻し SB書込失敗:', e.message); } }
+  localWriteMaster(MASTER_ROWS);
+  masterListInvalidAt = Date.now();   // マスタ画面キャッシュを無効化
+  console.log('  → ポテンツァプライムを★未分類へ戻す:', changed.length, '件');
+}
+
 // 廃止した子カテゴリを親へ統合（例: ヴェルベットスキン等 → ダーマペン）。起動時・冪等。
 async function migrateMergeCats(fromCats, toCat){
   const from = new Set(fromCats);
@@ -2018,6 +2046,7 @@ async function migrateRenameCat(from, to){
   try { await migrateNameToChild('肌育注射', 'リズネ', 'リズネ'); } catch(e){ console.error('リズネ子カテゴリ移行失敗:', e.message); }
   try { await migrateMergeCats(['CP-25'], 'ポテンツァ'); } catch(e){ console.error('CP-25統合失敗:', e.message); }
   try { await migrateUnassignCats(['ツヤ肌セット','ニキビ撃退セット']); } catch(e){ console.error('セット系未分類戻し失敗:', e.message); }
+  try { await migrateUnassignPrime(); } catch(e){ console.error('ポテンツァプライム未分類戻し失敗:', e.message); }
   try { await migrateMergeCats(['美容点滴・注射','高濃度ビタミンC点滴','エクソソーム点滴','NMN点滴','白玉注射','疲労回復点滴'], EXCLUDED); } catch(e){ console.error('美容点滴・注射 除外移行失敗:', e.message); }
   try { await migrateRetireBunpan(); } catch(e){ console.error('物販カテゴリ廃止失敗:', e.message); }
   // 施術フォルダ階層。保存分があれば即使い、最新は起動後にバックグラウンドで取り直す
