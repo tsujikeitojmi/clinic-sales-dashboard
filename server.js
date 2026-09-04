@@ -438,7 +438,7 @@ function aggregateKinds(values){
     const vis = v.visitorId || null;
     (v.paymentItems||[]).forEach(it=>{
       const kind = kindOf(it);
-      // 人数は medical-force の公式画面と同じ数え方にする（aggregateByKind と同一条件）。
+      // 人数は medical-force の公式画面と同じ数え方にする。
       // 「価格欄を持つ明細がある患者」を数えるので、コース契約だけで未消化の人や
       // ¥0の施術しか受けていない人も入る。売上の母集団とは意図的にズラしている
       // （カードの人数をMFと突き合わせられるようにするため。2026/08/24）。
@@ -490,7 +490,7 @@ function countVisits(values){
            → 内訳の件数合計 = カード/月別サマリーの総件数 と一致する。
    ・販売数/販売額(soldCount/soldSales) = コース・チケットを「売った」ぶん（契約行）。★売上・件数には一切入れない。
            コースは消化した月に売上計上するので、販売月と消化月はズレる（別勘定として横に並べるだけ）。
-   ※ユニーク患者数(頭数)は公式集計テーブル(aggregateByKind)だけが扱う。
+   ※ユニーク患者数(頭数)は aggregateKinds（カードの「人数」）だけが扱う。
    opts.includeSoldOnly=true のときだけ「販売はあったが当月の消化ゼロ」の施術も行として出す。
    （既定=false。/period の施術内訳は販売列を持たないので、行が増えないよう従来どおりにする） */
 function aggregateItems(values, masterMap, opts){
@@ -548,34 +548,11 @@ function aggregateItems(values, masterMap, opts){
     .sort((a,b)=> b.sales - a.sales);
 }
 
-/* ====================== 公式画面(medical-force)準拠の集計 ======================
-   medical-force の公式集計画面と同じ「個数・消化回数・人数・売上」を kind 別に出す。金額ロジックには影響しない。
-     個数=消化でない明細の数量(quantity)合計（単発＋コース契約）／消化回数=消化(courseDigestion>0)の数量合計
-     人数=その行(kind)の明細を持つユニーク患者数(visitorId)／売上=消化計上（金額と同一） */
-const OFFICIAL_ROWS = ['施術','薬剤','物品','その他'];
-function officialRowOf(kind){ return (kind==='施術'||kind==='薬剤'||kind==='物品') ? kind : 'その他'; }
-function aggregateByKind(values){
-  const R = {}; OFFICIAL_ROWS.forEach(k=>{ R[k]={kind:k, kosuu:0, shouka:0, sales:0, _ppl:new Set()}; });
-  (values||[]).forEach(v=>{
-    const vis = v.visitorId || null;
-    (v.paymentItems||[]).forEach(it=>{
-      const row = officialRowOf(it.kind);
-      const g = R[row];
-      const qty      = Number(it.quantity)||0;
-      const contract = Number(it.courseContractAmountWithTax)||0;
-      const digest   = Number(it.courseDigestionAmountWithTax)||0;
-      const genuine  = Number(it.genuinePriceWithTax)||0;
-      // 個数・消化回数は 施術/薬剤/物品 のみ（その他＝前受金・返金・調整は公式でも0）
-      if (row !== 'その他'){ if (digest>0) g.shouka += qty; else g.kosuu += qty; }
-      // 売上は全行で消化計上（金額ロジックと同一）
-      g.sales += contract>0 ? 0 : (digest>0 ? Math.floor(digest) : Math.floor(genuine));
-      // 人数：施術/薬剤/物品は価格フィールドのある行のみ、その他は kind 空欄を除外
-      const person = (row === 'その他') ? !!it.kind : (it.genuinePriceWithTax !== undefined);
-      if (vis && person) g._ppl.add(vis);
-    });
-  });
-  return OFFICIAL_ROWS.map(k=>({ kind:k, kosuu:R[k].kosuu, shouka:R[k].shouka, ninzuu:R[k]._ppl.size, sales:R[k].sales }));
-}
+/* 「公式集計（medical-force準拠）」テーブルは 2026/09 に廃止した（aggregateByKind / OFFICIAL_ROWS /
+   officialRowOf を削除）。売上・人数がカードと完全に重複していたため（キャッシュ全116か月×4区分＝
+   464セルすべてで一致）。この表だけが持っていた「個数・消化回数」は、APIの digest 判定が公式内部と
+   食い違って内訳が数十ズレる既知の問題があり、同じ理由でカードからも個数を外している(4752259)。
+   コース契約の数は施術内訳の「販売数・販売額」で見られる。復活させたい場合は commit 25b5f31 を参照。 */
 
 /* ====================== キャッシュ（APIの生データを保存） ======================
    集計後ではなく「取得した生データ(values)」をキャッシュする。
@@ -984,7 +961,7 @@ async function getDashboard(clinicKey, year, month, refresh){
     items: itemsData,  // 施術(optionId)単位の内訳
     monthly: await buildMonthlyTrend(clinicKey, year, month, byCat, values),
     daily: buildDailyBreakdown(values, masterMap, year, month),
-    official: { rows: aggregateByKind(values), enriched: isEnriched(values) },   // 公式画面準拠（個数/消化回数/人数/売上）
+    enriched: isEnriched(values),   // false＝旧キャッシュ(kind/quantity/visitorId無し)で人数が出せない。カードで再取得を促す
     rankings,
     pendingCount: Object.keys(pend).length,   // 実際に振り分けできる未分類の件数（キャンセル料・払戻金などoptionId無しは除く）
   };

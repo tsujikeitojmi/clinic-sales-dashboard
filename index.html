@@ -185,7 +185,6 @@
     table{width:100%;border-collapse:collapse}
     th,td{text-align:right;padding:9px 10px;border-bottom:1px solid var(--hair);font-variant-numeric:tabular-nums;white-space:nowrap}
     th:first-child,td:first-child{text-align:left;white-space:normal}   /* 施術名だけ折り返しOK */
-    tr.official-total td{font-weight:700;border-top:2px solid var(--hair);background:var(--accent-tint)}
     /* 施術内訳テーブル：列幅を固定して施術名が潰れないように（APIカテゴリの長文で押されるのを防ぐ） */
     #itemsTable{table-layout:fixed;width:100%}
     #itemsTable th:first-child,#itemsTable td:first-child{width:22%}
@@ -368,19 +367,8 @@
       </div>
     </div>
 
-    <!-- 公式集計（medical-force準拠）：個数・消化回数・人数・売上 を 施術/薬剤/物品/その他 別に -->
-    <div class="panel" id="officialPanel">
-      <div style="display:flex;align-items:center;gap:10px;margin-bottom:12px;flex-wrap:wrap">
-        <h3 style="margin:0">公式集計（medical-force準拠）</h3>
-        <span class="muted" id="officialNote" style="font-size:11px"></span>
-      </div>
-      <table id="officialTable">
-        <thead>
-          <tr><th>項目</th><th>個数</th><th>消化回数</th><th>人数</th><th>売上</th></tr>
-        </thead>
-        <tbody id="officialBody"></tbody>
-      </table>
-    </div>
+    <!-- 「公式集計（medical-force準拠）」テーブルは 2026/09 に廃止（売上・人数が上のカードと完全重複のため）。
+         旧データ警告はカード下の注記に移設した（renderCards）。経緯は server.js の同名コメントを参照 -->
 
     <div class="panel" id="monthlyPanel">
       <div style="display:flex;align-items:center;gap:12px;margin-bottom:12px">
@@ -685,7 +673,7 @@ function render(){
   buildAccordion();
   renderSubCatChips();
   renderChart();
-  renderMonthlyTable(); renderDailyTable(); renderOfficial();   // 初回表示でも月別サマリーを描画（これが無いと全体タブを開くまで空だった）
+  renderMonthlyTable(); renderDailyTable();   // 初回表示でも月別サマリーを描画（これが無いと全体タブを開くまで空だった）
   renderRank();
   renderCatTable();
   renderItems();
@@ -802,6 +790,7 @@ function renderCards(){
         </div>`).join('')}
     </div>
     <div class="cards-lbl" style="font-weight:400">件数＝会計ごとの回数（売上と同じ母集団）／人数＝medical-force の「人数」と同じ数え方</div>
+    ${DATA.enriched===false ? `<div class="cards-lbl" style="font-weight:400;color:var(--accent-d)">⚠️ この月は旧データのため<b>人数が0で出ます</b>。<b>🔄 最新取得</b>で取り直してください（売上・件数は正しく、再取得しても変わりません）。</div>` : ''}
     <div class="cards-lbl">施術の内訳（通常／CP／媒体）</div>
     <div class="cards-row c3">
       <div class="card-sm t-n"><div class="k">通常</div><div class="v">${yen(normal)}</div>
@@ -811,30 +800,6 @@ function renderCards(){
       <div class="card-sm t-m"><div class="k">媒体</div><div class="v">${yen(media)}</div>
         <div class="s">${num(cnt('媒体'))} 件 ・ 施術の <b>${pct(media,shSales)}%</b></div></div>
     </div>`;
-}
-
-/* ====== 公式集計（medical-force画面と一致）: 個数・消化回数・人数・売上 ====== */
-function renderOfficial(){
-  const panel = document.getElementById('officialPanel');
-  const o = DATA.official;
-  if (curCat || !o){ panel.style.display='none'; return; }   // カテゴリ選択中/データ無しは非表示（院全体の数字のため）
-  panel.style.display='';
-  const note = document.getElementById('officialNote');
-  const body = document.getElementById('officialBody');
-  if (!o.enriched){
-    // 古いキャッシュ（kind/quantity/visitorId 無し）→ 個数等は出せないので再取得を促す
-    note.innerHTML = '⚠️ この月は旧データのため個数・人数を計算できません。<b>🔄 最新取得</b>で再取得してください（金額は変わりません）。';
-    body.innerHTML = `<tr><td colspan="5" class="muted" style="text-align:center;padding:16px">再取得が必要です</td></tr>`;
-    return;
-  }
-  note.textContent = '個数=数量ベース（単発＋契約）／消化回数＝コース消化の数量／人数＝ユニーク患者数';
-  const rows = o.rows || [];
-  const tot = rows.reduce((a,r)=>({kosuu:a.kosuu+r.kosuu, shouka:a.shouka+r.shouka, ninzuu:a.ninzuu+r.ninzuu, sales:a.sales+r.sales}), {kosuu:0,shouka:0,ninzuu:0,sales:0});
-  const line = (label,r,cls='',ninzuu)=>`<tr class="${cls}">
-    <td style="text-align:left">${label}</td>
-    <td>${num(r.kosuu)}</td><td>${num(r.shouka)}</td><td>${ninzuu===undefined?num(r.ninzuu):ninzuu}</td><td>${yen(r.sales)}</td></tr>`;
-  // 合計の人数は「—」（行ごとのユニーク患者を足すと、複数区分を利用した人を重複計上するため）
-  body.innerHTML = rows.map(r=>line(r.kind, r)).join('') + line('合計', tot, 'official-total', '—');
 }
 
 /* ====== カテゴリ階層ツリー ====== */
@@ -1002,7 +967,7 @@ function selectCat(cat){
   curSubCat = null;
   curSubCat2 = null;
   curCat = (cat===curCat) ? null : cat;
-  buildAccordion(); renderSubCatChips(); renderCards2(); renderChart(); renderMonthlyTable(); renderDailyTable(); renderOfficial(); renderItems(); updateCatBadge(); toggleDetailPanels();
+  buildAccordion(); renderSubCatChips(); renderCards2(); renderChart(); renderMonthlyTable(); renderDailyTable(); renderItems(); updateCatBadge(); toggleDetailPanels();
 }
 
 function effectiveCat(){ return curSubCat2 || curSubCat || curCat; }
@@ -1047,12 +1012,12 @@ function renderSubCatChips(){
 function selectSubCat(cat){
   curSubCat = (cat===curSubCat) ? null : cat;
   curSubCat2 = null;
-  renderSubCatChips(); renderCards2(); renderChart(); renderMonthlyTable(); renderDailyTable(); renderOfficial(); renderItems(); updateCatBadge();
+  renderSubCatChips(); renderCards2(); renderChart(); renderMonthlyTable(); renderDailyTable(); renderItems(); updateCatBadge();
 }
 
 function selectSubCat2(cat){
   curSubCat2 = (cat===curSubCat2) ? null : cat;
-  renderSubCatChips(); renderCards2(); renderChart(); renderMonthlyTable(); renderDailyTable(); renderOfficial(); renderItems(); updateCatBadge();
+  renderSubCatChips(); renderCards2(); renderChart(); renderMonthlyTable(); renderDailyTable(); renderItems(); updateCatBadge();
 }
 
 function toggleDetailPanels(){
